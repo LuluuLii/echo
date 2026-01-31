@@ -1,0 +1,23 @@
+{
+  "name": "echo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Echo - Every note echoes back",
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "dev:mobile": "pnpm --filter @echo/mobile dev",
+    "dev:server": "pnpm --filter @echo/server dev",
+    "dev:web": "pnpm --filter @echo/web dev",
+    "build": "pnpm run --parallel build",
+    "lint": "pnpm run --parallel lint",
+    "clean": "pnpm run --parallel clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
