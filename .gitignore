@@ -45,3 +45,7 @@ pnpm-debug.log*
 # Local SQLite databases
 *.db
 *.sqlite
+
+# Private docs (WIP)
+idea.md
+english-learning-poc.md
