@@ -16,7 +16,10 @@ export function Layout() {
               Library
             </NavLink>
             <NavLink to="/activation" current={location.pathname === '/activation'}>
-              Activation
+              Today
+            </NavLink>
+            <NavLink to="/session" current={location.pathname === '/session'}>
+              Practice
             </NavLink>
           </nav>
         </div>

@@ -4,7 +4,7 @@ import { useMaterialsStore } from '../lib/store/materials';
 
 export function Activation() {
   const navigate = useNavigate();
-  const { currentCard, materials } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard } = useMaterialsStore();
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
 
   // Get source materials for this card
@@ -31,6 +31,10 @@ export function Activation() {
   };
 
   const handleStartEcho = () => {
+    // Ensure the card is in the store before navigating
+    if (!currentCard) {
+      setCurrentCard(card);
+    }
     navigate('/session');
   };
 
