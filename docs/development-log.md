@@ -1,12 +1,14 @@
 # Echo Development Log
 
-> 最后更新: 2026-02-02
+> 最后更新: 2026-02-07
 
 ## 项目概述
 
 Echo 是一个语言学习应用，核心理念是「激活」而非「教学」—— 帮助用户把积累的零碎素材转化为真实的语言表达。
 
-**核心流程**: 素材导入 → 激活卡生成 → Echo Session 对话 → 保存表达
+**核心流程**: 素材积累 → 召回检索 → 激活唤醒 → 表达输出
+
+> ⚠️ **设计调整 (v2)**: 调整为离线优先架构，激活和表达环节在离线时通过模板兜底，AI 作为增强而非阻塞。详见 [product-design-v2.md](./product-design-v2.md)
 
 ## 当前实现状态
 
@@ -192,24 +194,32 @@ daaefb8 feat: Add two entry points for Echo session
 
 ## 下一步计划
 
-### 短期 (完善 POC)
+> 详细设计见 [product-design-v2.md](./product-design-v2.md)
 
-1. **数据持久化** - 实现 SQLite 存储，刷新不丢失
-2. **API Key 配置** - 添加 OpenAI Key 测试真实 AI 效果
-3. **UX 优化** - 根据使用反馈调整交互
+### Phase 1: 召回检索基础 ⬅️ 当前优先
 
-### 中期 (Mobile 端)
+1. **关键词搜索 UI** - Practice 页面添加搜索框
+2. **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
+3. **语义相似度搜索** - 基于 embedding 的智能召回
+4. **数据持久化** - SQLite/IndexedDB 存储（含 embedding）
+
+### Phase 2: 智能推荐
+
+1. **自动聚类** - K-Means 聚类 + 标签生成
+2. **相似素材推荐** - 查看时显示相关内容
+3. **Activation Card 模板** - 离线模板兜底
+
+### Phase 3: Insights 可视化
+
+1. **聚类地图** - 主题分布可视化
+2. **时间轴** - 积累成长轨迹
+3. **用户洞察** - 关注主题、活跃度分析
+
+### Phase 4: Mobile 端
 
 1. **Mobile UI** - 完整实现 Mobile 端页面
-2. **图片选择** - expo-image-picker 集成
+2. **ONNX Runtime** - 端上 Embedding 模型
 3. **TestFlight** - EAS Build 发布测试
-
-### 长期 (产品化)
-
-1. **语音功能** - 语音输入/输出
-2. **每日推送** - 定时生成激活卡推送
-3. **Insight** - 表达数据分析
-4. **离线优先** - 本地 AI 模型支持
 
 ## 设计决策记录
 
