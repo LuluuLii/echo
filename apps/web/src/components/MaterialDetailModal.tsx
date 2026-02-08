@@ -1,23 +1,58 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { RawMaterial } from '../lib/store/materials';
+import { findSimilarMaterials } from '../lib/embedding';
 
 interface MaterialDetailModalProps {
   material: RawMaterial;
+  materials: RawMaterial[]; // All materials for similarity search
   onClose: () => void;
   onUpdate: (id: string, content: string, note?: string) => void;
   onDelete: (id: string) => void;
+  onSelectMaterial?: (material: RawMaterial) => void; // Navigate to similar material
 }
 
 export function MaterialDetailModal({
   material,
+  materials,
   onClose,
   onUpdate,
   onDelete,
+  onSelectMaterial,
 }: MaterialDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(material.content);
   const [note, setNote] = useState(material.note || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [similarMaterials, setSimilarMaterials] = useState<Array<{ material: RawMaterial; score: number }>>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+
+  // Fetch similar materials
+  useEffect(() => {
+    if (materials.length <= 1) return;
+
+    setLoadingSimilar(true);
+    findSimilarMaterials(
+      material.id,
+      materials.map((m) => ({ id: m.id, content: m.content })),
+      5
+    )
+      .then((results) => {
+        const similar = results
+          .filter((r) => r.score > 0.3) // Only show if similarity > 30%
+          .map((r) => ({
+            material: materials.find((m) => m.id === r.id)!,
+            score: r.score,
+          }))
+          .filter((r) => r.material); // Filter out any undefined
+        setSimilarMaterials(similar);
+      })
+      .catch((error) => {
+        console.warn('Failed to find similar materials:', error);
+      })
+      .finally(() => {
+        setLoadingSimilar(false);
+      });
+  }, [material.id, materials]);
 
   const handleSave = () => {
     onUpdate(material.id, content, note || undefined);
@@ -99,6 +134,39 @@ export function MaterialDetailModal({
                     Your Note
                   </p>
                   <p className="text-echo-muted italic">{material.note}</p>
+                </div>
+              )}
+
+              {/* Similar Materials */}
+              {!isEditing && (
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                  <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">
+                    Similar Materials
+                  </p>
+                  {loadingSimilar ? (
+                    <p className="text-echo-muted text-sm">Finding similar materials...</p>
+                  ) : similarMaterials.length > 0 ? (
+                    <div className="space-y-2">
+                      {similarMaterials.map(({ material: sim, score }) => (
+                        <button
+                          key={sim.id}
+                          onClick={() => onSelectMaterial?.(sim)}
+                          className="w-full text-left p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group"
+                        >
+                          <p className="text-echo-text text-sm line-clamp-2 group-hover:text-echo-accent">
+                            {sim.content}
+                          </p>
+                          <p className="text-echo-hint text-xs mt-1">
+                            {Math.round(score * 100)}% similar
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-echo-muted text-sm italic">
+                      No similar materials found
+                    </p>
+                  )}
                 </div>
               )}
             </div>

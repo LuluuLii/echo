@@ -17,13 +17,16 @@ export function Layout() {
           <div className="flex items-center gap-4">
             <nav className="flex gap-4">
               <NavLink to="/" current={location.pathname === '/'}>
-                Library
-              </NavLink>
-              <NavLink to="/activation" current={location.pathname === '/activation'}>
                 Today
               </NavLink>
-              <NavLink to="/session" current={location.pathname === '/session'}>
+              <NavLink to="/practice" current={location.pathname === '/practice'}>
                 Practice
+              </NavLink>
+              <NavLink to="/insights" current={location.pathname === '/insights'}>
+                Insights
+              </NavLink>
+              <NavLink to="/library" current={location.pathname === '/library'}>
+                Library
               </NavLink>
             </nav>
             <button

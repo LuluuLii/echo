@@ -185,3 +185,52 @@ export async function preloadModel(): Promise<void> {
     console.warn('Failed to preload embedding model:', error);
   }
 }
+
+/**
+ * Find materials similar to a given material
+ */
+export async function findSimilarMaterials(
+  materialId: string,
+  materials: Array<{ id: string; content: string }>,
+  topK = 5
+): Promise<Array<{ id: string; score: number }>> {
+  // Get the target material's embedding
+  const targetMaterial = materials.find((m) => m.id === materialId);
+  if (!targetMaterial) {
+    return [];
+  }
+
+  const targetEmb = await getEmbedding(materialId, targetMaterial.content);
+
+  // Calculate similarity with all other materials
+  const results: Array<{ id: string; score: number }> = [];
+
+  for (const material of materials) {
+    if (material.id === materialId) continue; // Skip self
+
+    const materialEmb = await getEmbedding(material.id, material.content);
+    const score = cosineSimilarity(targetEmb, materialEmb);
+    results.push({ id: material.id, score });
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results.slice(0, topK);
+}
+
+/**
+ * Get all embeddings for clustering
+ */
+export async function getAllEmbeddings(
+  materials: Array<{ id: string; content: string }>
+): Promise<Map<string, number[]>> {
+  const embeddings = new Map<string, number[]>();
+
+  for (const material of materials) {
+    const emb = await getEmbedding(material.id, material.content);
+    embeddings.set(material.id, emb);
+  }
+
+  return embeddings;
+}

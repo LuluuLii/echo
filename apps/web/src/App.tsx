@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { RawLibrary } from './pages/RawLibrary';
 import { Activation } from './pages/Activation';
 import { Session } from './pages/Session';
+import { Insights } from './pages/Insights';
+import { RawLibrary } from './pages/RawLibrary';
 import { useMaterialsStore } from './lib/store/materials';
 
 function App() {
@@ -29,9 +30,10 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
-          <Route index element={<RawLibrary />} />
-          <Route path="activation" element={<Activation />} />
-          <Route path="session" element={<Session />} />
+          <Route index element={<Activation />} />
+          <Route path="practice" element={<Session />} />
+          <Route path="insights" element={<Insights />} />
+          <Route path="library" element={<RawLibrary />} />
         </Route>
       </Routes>
     </BrowserRouter>

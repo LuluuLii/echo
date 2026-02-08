@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMaterialsStore, type ActivationCard } from '../lib/store/materials';
 import { generateActivationCard } from '../lib/activation-templates';
+import { AddMaterialModal } from '../components/AddMaterialModal';
 
 export function Activation() {
   const navigate = useNavigate();
-  const { currentCard, materials, setCurrentCard, clearCurrentCard } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, clearCurrentCard, addMaterial } = useMaterialsStore();
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCard, setGeneratedCard] = useState<ActivationCard | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Clear stale card on mount - always generate fresh from current materials
   useEffect(() => {
@@ -55,8 +57,13 @@ export function Activation() {
 
   const handleStartEcho = () => {
     if (card) {
-      navigate('/session');
+      navigate('/practice');
     }
+  };
+
+  const handleAddMaterial = (content: string, type: 'text' | 'image', note?: string) => {
+    addMaterial(content, type, note);
+    setShowAddModal(false);
   };
 
   const handleRegenerate = async () => {
@@ -108,18 +115,25 @@ export function Activation() {
       <div className="max-w-xl mx-auto">
         <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-50 text-center">
           <h2 className="text-xl font-semibold text-echo-text mb-2">
-            No materials yet
+            Ready to express yourself?
           </h2>
           <p className="text-echo-muted mb-6">
-            Add some materials to your library to generate activation cards.
+            Add your first material to start receiving personalized activation cards.
           </p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => setShowAddModal(true)}
             className="px-6 py-3 bg-echo-text text-white rounded-xl font-medium hover:bg-gray-700 transition-colors"
           >
-            Go to Library
+            + Add Your First Material
           </button>
         </div>
+
+        {showAddModal && (
+          <AddMaterialModal
+            onClose={() => setShowAddModal(false)}
+            onAdd={handleAddMaterial}
+          />
+        )}
       </div>
     );
   }
@@ -218,17 +232,35 @@ export function Activation() {
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-4 mt-6">
-        <p className="text-echo-hint text-sm italic">
+      {/* Bottom actions */}
+      <div className="mt-6 space-y-4">
+        <p className="text-echo-hint text-sm italic text-center">
           This card will fade. The only way to keep it is to speak.
         </p>
-        <button
-          onClick={handleRegenerate}
-          className="text-echo-hint hover:text-echo-muted text-sm underline"
-        >
-          New card
-        </button>
+        <div className="flex items-center justify-center gap-4">
+          <button
+            onClick={handleRegenerate}
+            className="text-echo-hint hover:text-echo-muted text-sm underline"
+          >
+            New card
+          </button>
+          <span className="text-echo-hint">·</span>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="text-echo-hint hover:text-echo-muted text-sm underline"
+          >
+            + Add material
+          </button>
+        </div>
       </div>
+
+      {/* Add Material Modal */}
+      {showAddModal && (
+        <AddMaterialModal
+          onClose={() => setShowAddModal(false)}
+          onAdd={handleAddMaterial}
+        />
+      )}
     </div>
   );
 }
