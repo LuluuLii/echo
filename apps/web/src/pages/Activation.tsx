@@ -1,46 +1,133 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMaterialsStore } from '../lib/store/materials';
+import { useMaterialsStore, type ActivationCard } from '../lib/store/materials';
+import { generateActivationCard } from '../lib/activation-templates';
 
 export function Activation() {
   const navigate = useNavigate();
-  const { currentCard, materials, setCurrentCard } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, clearCurrentCard } = useMaterialsStore();
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedCard, setGeneratedCard] = useState<ActivationCard | null>(null);
+
+  // Clear stale card on mount - always generate fresh from current materials
+  useEffect(() => {
+    clearCurrentCard();
+  }, [clearCurrentCard]);
+
+  // Auto-generate card if none exists and we have materials
+  useEffect(() => {
+    if (!currentCard && !generatedCard && materials.length > 0 && !isGenerating) {
+      setIsGenerating(true);
+
+      // Select random 2-4 materials for daily activation
+      const shuffled = [...materials].sort(() => Math.random() - 0.5);
+      const selectedCount = Math.min(Math.max(2, Math.floor(Math.random() * 3) + 2), materials.length);
+      const selectedMaterials = shuffled.slice(0, selectedCount);
+
+      generateActivationCard(
+        selectedMaterials.map((m) => ({
+          id: m.id,
+          content: m.content,
+          note: m.note,
+        }))
+      )
+        .then((card) => {
+          setGeneratedCard(card);
+          setCurrentCard(card);
+        })
+        .catch((error) => {
+          console.error('Failed to generate activation card:', error);
+        })
+        .finally(() => {
+          setIsGenerating(false);
+        });
+    }
+  }, [currentCard, generatedCard, materials, isGenerating, setCurrentCard]);
+
+  // Use current card, generated card, or show loading/empty state
+  const card = currentCard || generatedCard;
 
   // Get source materials for this card
-  const sourceMaterials = currentCard
-    ? materials.filter((m) => currentCard.materialIds.includes(m.id))
-    : materials;
-
-  // Fallback card for demo
-  const card = currentCard || {
-    id: 'demo',
-    emotionalAnchor:
-      'A moment you became aware of how emotions show up in the body.',
-    livedExperience:
-      'When I get tense in the water, everything reacts immediately. My shoulders tighten, my legs slow down... Slowing down for just a few seconds somehow resets everything.',
-    expressions: [
-      'Any tension shows up immediately in the body.',
-      'Slowing down helps me regain control.',
-      'The body reacts faster than the mind.',
-    ],
-    invitation:
-      'If you were explaining this to someone — not as a swimmer, but as a person — what would you say?',
-    materialIds: [],
-    createdAt: Date.now(),
-  };
+  const sourceMaterials = card
+    ? materials.filter((m) => card.materialIds.includes(m.id))
+    : [];
 
   const handleStartEcho = () => {
-    // Ensure the card is in the store before navigating
-    if (!currentCard) {
-      setCurrentCard(card);
+    if (card) {
+      navigate('/session');
     }
-    navigate('/session');
+  };
+
+  const handleRegenerate = async () => {
+    if (materials.length === 0) return;
+
+    setIsGenerating(true);
+    setGeneratedCard(null);
+
+    // Select random 2-4 materials
+    const shuffled = [...materials].sort(() => Math.random() - 0.5);
+    const selectedCount = Math.min(Math.max(2, Math.floor(Math.random() * 3) + 2), materials.length);
+    const selectedMaterials = shuffled.slice(0, selectedCount);
+
+    try {
+      const newCard = await generateActivationCard(
+        selectedMaterials.map((m) => ({
+          id: m.id,
+          content: m.content,
+          note: m.note,
+        }))
+      );
+      setGeneratedCard(newCard);
+      setCurrentCard(newCard);
+    } catch (error) {
+      console.error('Failed to regenerate card:', error);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const hoveredMaterial = hoveredMaterialId
     ? materials.find((m) => m.id === hoveredMaterialId)
     : null;
+
+  // Loading state
+  if (isGenerating) {
+    return (
+      <div className="max-w-xl mx-auto">
+        <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-50 text-center">
+          <p className="text-echo-muted">Generating your activation card...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state - no materials
+  if (materials.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto">
+        <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-50 text-center">
+          <h2 className="text-xl font-semibold text-echo-text mb-2">
+            No materials yet
+          </h2>
+          <p className="text-echo-muted mb-6">
+            Add some materials to your library to generate activation cards.
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-3 bg-echo-text text-white rounded-xl font-medium hover:bg-gray-700 transition-colors"
+          >
+            Go to Library
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // No card generated yet (shouldn't happen normally)
+  if (!card) {
+    return null;
+  }
 
   return (
     <div className="max-w-xl mx-auto">
@@ -131,9 +218,17 @@ export function Activation() {
         )}
       </div>
 
-      <p className="text-echo-hint text-sm text-center mt-6 italic">
-        This card will fade. The only way to keep it is to speak.
-      </p>
+      <div className="flex items-center justify-center gap-4 mt-6">
+        <p className="text-echo-hint text-sm italic">
+          This card will fade. The only way to keep it is to speak.
+        </p>
+        <button
+          onClick={handleRegenerate}
+          className="text-echo-hint hover:text-echo-muted text-sm underline"
+        >
+          New card
+        </button>
+      </div>
     </div>
   );
 }

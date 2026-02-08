@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMaterialsStore, type RawMaterial, type ActivationCard } from '../lib/store/materials';
+import { semanticSearch, isModelLoaded, isModelLoading, setProgressCallback, preloadModel } from '../lib/embedding';
+import { generateActivationCard } from '../lib/activation-templates';
 
 interface Message {
   id: string;
@@ -22,6 +24,13 @@ export function Session() {
   const [selectedMaterials, setSelectedMaterials] = useState<RawMaterial[]>([]);
   const [generatedCard, setGeneratedCard] = useState<ActivationCard | null>(currentCard);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Semantic search state
+  const [searchMode, setSearchMode] = useState<'keyword' | 'semantic'>('keyword');
+  const [semanticResults, setSemanticResults] = useState<Array<{ id: string; score: number }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [modelProgress, setModelProgress] = useState(0);
+  const [modelStatus, setModelStatus] = useState('');
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -49,8 +58,43 @@ export function Session() {
     ? materials.find((m) => m.id === hoveredMaterialId)
     : null;
 
-  // Filter materials by topic
-  const filteredMaterials = topic.trim()
+  // Setup model progress callback
+  useEffect(() => {
+    setProgressCallback((progress, status) => {
+      setModelProgress(progress);
+      setModelStatus(status);
+    });
+    return () => setProgressCallback(null);
+  }, []);
+
+  // Preload embedding model when entering topic-input phase
+  useEffect(() => {
+    if (phase === 'topic-input' && !isModelLoaded() && !isModelLoading()) {
+      preloadModel();
+    }
+  }, [phase]);
+
+  // Semantic search handler
+  const handleSemanticSearch = useCallback(async () => {
+    if (!topic.trim() || materials.length === 0) return;
+
+    setIsSearching(true);
+    try {
+      const results = await semanticSearch(
+        topic,
+        materials.map((m) => ({ id: m.id, content: m.content })),
+        10
+      );
+      setSemanticResults(results);
+    } catch (error) {
+      console.error('Semantic search failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [topic, materials]);
+
+  // Filter materials by topic (keyword search)
+  const keywordFilteredMaterials = topic.trim()
     ? materials.filter((m) => {
         const searchText = topic.toLowerCase();
         return (
@@ -59,6 +103,13 @@ export function Session() {
         );
       })
     : materials;
+
+  // Get filtered materials based on search mode
+  const filteredMaterials = searchMode === 'semantic' && semanticResults.length > 0
+    ? semanticResults
+        .map((r) => materials.find((m) => m.id === r.id))
+        .filter((m): m is RawMaterial => m !== undefined)
+    : keywordFilteredMaterials;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -69,8 +120,33 @@ export function Session() {
   }, [messages]);
 
   // Handle topic search and move to material selection
-  const handleTopicSearch = () => {
-    if (filteredMaterials.length > 0) {
+  const handleTopicSearch = async () => {
+    if (searchMode === 'semantic' && topic.trim()) {
+      // Run semantic search first
+      setIsSearching(true);
+      try {
+        const results = await semanticSearch(
+          topic,
+          materials.map((m) => ({ id: m.id, content: m.content })),
+          10
+        );
+        setSemanticResults(results);
+
+        // Get materials from results
+        const resultMaterials = results
+          .map((r) => materials.find((m) => m.id === r.id))
+          .filter((m): m is RawMaterial => m !== undefined);
+
+        if (resultMaterials.length > 0) {
+          setSelectedMaterials(resultMaterials.slice(0, 5));
+          setPhase('material-selection');
+        }
+      } catch (error) {
+        console.error('Semantic search failed:', error);
+      } finally {
+        setIsSearching(false);
+      }
+    } else if (filteredMaterials.length > 0) {
       setSelectedMaterials(filteredMaterials.slice(0, 5)); // Pre-select top 5
       setPhase('material-selection');
     }
@@ -82,20 +158,14 @@ export function Session() {
 
     setIsGenerating(true);
     try {
-      const response = await fetch('http://localhost:3000/api/activation/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          materialIds: selectedMaterials.map((m) => m.id),
-          materials: selectedMaterials.map((m) => ({
-            id: m.id,
-            content: m.content,
-            note: m.note,
-          })),
-        }),
-      });
-
-      const cardData = await response.json();
+      // Uses AI when available, falls back to offline templates
+      const cardData = await generateActivationCard(
+        selectedMaterials.map((m) => ({
+          id: m.id,
+          content: m.content,
+          note: m.note,
+        }))
+      );
       setGeneratedCard(cardData);
       setCurrentCard(cardData);
       setPhase('activation-preview');
@@ -228,22 +298,68 @@ export function Session() {
           <input
             type="text"
             value={topic}
-            onChange={(e) => setTopic(e.target.value)}
+            onChange={(e) => {
+              setTopic(e.target.value);
+              setSemanticResults([]); // Clear semantic results on input change
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleTopicSearch()}
             placeholder="e.g., swimming, learning, frustration, growth..."
             className="w-full p-4 text-lg border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
             autoFocus
           />
 
+          {/* Search mode toggle */}
+          <div className="flex items-center gap-2 mt-4">
+            <button
+              onClick={() => setSearchMode('keyword')}
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                searchMode === 'keyword'
+                  ? 'bg-echo-text text-white'
+                  : 'bg-gray-100 text-echo-muted hover:bg-gray-200'
+              }`}
+            >
+              Keyword
+            </button>
+            <button
+              onClick={() => {
+                setSearchMode('semantic');
+                if (topic.trim()) {
+                  handleSemanticSearch();
+                }
+              }}
+              disabled={isSearching}
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1 ${
+                searchMode === 'semantic'
+                  ? 'bg-echo-text text-white'
+                  : 'bg-gray-100 text-echo-muted hover:bg-gray-200'
+              }`}
+            >
+              {isSearching ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  Searching...
+                </>
+              ) : (
+                'Semantic'
+              )}
+            </button>
+            {searchMode === 'semantic' && !isModelLoaded() && modelStatus && (
+              <span className="text-xs text-echo-hint ml-2">
+                {modelStatus} ({Math.round(modelProgress)}%)
+              </span>
+            )}
+          </div>
+
           {topic.trim() && (
             <p className="text-echo-hint text-sm mt-3">
               {filteredMaterials.length} material{filteredMaterials.length !== 1 ? 's' : ''} found
+              {searchMode === 'semantic' && semanticResults.length > 0 && ' (by similarity)'}
             </p>
           )}
 
           <button
             onClick={handleTopicSearch}
-            disabled={filteredMaterials.length === 0}
+            disabled={filteredMaterials.length === 0 || isSearching}
             className="w-full mt-4 bg-echo-text text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"
           >
             Find Materials
@@ -305,6 +421,7 @@ export function Session() {
         <div className="space-y-3 mb-6">
           {filteredMaterials.map((material) => {
             const isSelected = selectedMaterials.some((m) => m.id === material.id);
+            const semanticScore = semanticResults.find((r) => r.id === material.id)?.score;
             return (
               <div
                 key={material.id}
@@ -321,11 +438,20 @@ export function Session() {
                     : 'bg-white border border-gray-100 hover:border-gray-200'
                 }`}
               >
-                <p className={`text-sm leading-relaxed line-clamp-3 ${
-                  isSelected ? 'text-white' : 'text-echo-text'
-                }`}>
-                  {material.content}
-                </p>
+                <div className="flex justify-between items-start gap-2">
+                  <p className={`text-sm leading-relaxed line-clamp-3 flex-1 ${
+                    isSelected ? 'text-white' : 'text-echo-text'
+                  }`}>
+                    {material.content}
+                  </p>
+                  {semanticScore !== undefined && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 text-echo-hint'
+                    }`}>
+                      {Math.round(semanticScore * 100)}%
+                    </span>
+                  )}
+                </div>
                 {material.note && (
                   <p className={`text-xs mt-2 italic ${
                     isSelected ? 'text-white/70' : 'text-echo-hint'

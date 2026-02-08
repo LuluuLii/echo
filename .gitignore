@@ -7,6 +7,14 @@ build/
 .expo/
 *.tsbuildinfo
 
+# TypeScript build artifacts in src (should only be in dist/)
+**/src/**/*.js
+**/src/**/*.js.map
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map
+# Exception for intentional type declarations
+!**/src/types/**/*.d.ts
+
 # Environment files
 .env
 .env.local

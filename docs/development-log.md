@@ -195,31 +195,40 @@ daaefb8 feat: Add two entry points for Echo session
 ## 下一步计划
 
 > 详细设计见 [product-design-v2.md](./product-design-v2.md)
+>
+> 同步架构见 [sync-architecture.md](./sync-architecture.md)
 
-### Phase 1: 召回检索基础 ⬅️ 当前优先
+### Phase 1: 数据持久化 + 召回检索 ⬅️ 当前优先
 
-1. **关键词搜索 UI** - Practice 页面添加搜索框
-2. **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
-3. **语义相似度搜索** - 基于 embedding 的智能召回
-4. **数据持久化** - SQLite/IndexedDB 存储（含 embedding）
+1. **Loro + IndexedDB 持久化** - 从一开始使用 Loro 数据格式
+2. **关键词搜索 UI** - Practice 页面添加搜索框
+3. **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
+4. **语义相似度搜索** - 基于 embedding 的智能召回
 
-### Phase 2: 智能推荐
+### Phase 2: iCloud 同步
+
+1. **File System Access API** - Web 端访问 iCloud Drive
+2. **手动/定期同步** - IndexedDB → iCloud 单向推送
+3. **从 iCloud 恢复** - 新设备初始化
+
+### Phase 3: 智能推荐
 
 1. **自动聚类** - K-Means 聚类 + 标签生成
 2. **相似素材推荐** - 查看时显示相关内容
 3. **Activation Card 模板** - 离线模板兜底
 
-### Phase 3: Insights 可视化
+### Phase 4: Insights 可视化
 
 1. **聚类地图** - 主题分布可视化
 2. **时间轴** - 积累成长轨迹
 3. **用户洞察** - 关注主题、活跃度分析
 
-### Phase 4: Mobile 端
+### Phase 5: Mobile 端
 
 1. **Mobile UI** - 完整实现 Mobile 端页面
 2. **ONNX Runtime** - 端上 Embedding 模型
-3. **TestFlight** - EAS Build 发布测试
+3. **iCloud 原生访问** - 替代 File System Access API
+4. **TestFlight** - EAS Build 发布测试
 
 ## 设计决策记录
 
@@ -261,6 +270,34 @@ daaefb8 feat: Add two entry points for Echo session
 - 开发迭代更快
 - 便于快速验证产品逻辑
 - Mobile 端可复用 Core 逻辑
+
+### 4. Embedding 不参与同步
+
+**决策**: Embedding 向量在本地生成，不通过 Loro CRDT 同步
+
+**原因**:
+- **可重建性**: Embedding 是派生数据，可以根据素材内容随时重新生成
+- **向量维度高**: all-MiniLM-L6-v2 产生 384 维向量，每条素材约 1.5KB
+- **CRDT 不适合**: 向量是整体替换语义，不存在合并冲突，用 CRDT 是 overkill
+- **模型版本问题**: 不同端可能使用不同版本模型，同步后向量反而不兼容
+- **节省同步带宽**: 100 条素材的 embedding 约 150KB，无需占用 iCloud 空间
+
+**策略**: 每个端在同步新素材后，本地独立计算 embedding
+
+### 5. 多端同步方案: Loro + iCloud
+
+**决策**: 使用 Loro CRDT 作为数据结构，iCloud Drive 作为同步通道
+
+**原因**:
+- **Loro**: Rust 实现，高性能，支持 WASM (Web) 和 Native (Mobile)，自动处理冲突
+- **iCloud**: 用户数据自主，无需自建服务器，Apple 生态内免费
+
+**实现策略**:
+- **IndexedDB 为权威数据源** - 所有写操作只写 IndexedDB
+- **同步为单向推送** - 手动/定期从 IndexedDB 推送到 iCloud
+- **从一开始使用 Loro** - 数据格式无需迁移
+
+详见 [sync-architecture.md](./sync-architecture.md)
 
 ---
 
