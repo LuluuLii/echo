@@ -15,14 +15,30 @@ export interface LoroMaterial {
 }
 
 /**
- * Echo output data stored in Loro (synced)
+ * Echo Artifact - user's finalized expression (synced)
  */
-export interface LoroOutput {
+export interface LoroArtifact {
+  id: string;
+  content: string;           // User's final expression
+  materialIds: string[];     // Related materials
+  anchor?: string;           // emotionalAnchor summary
+  createdAt: number;
+}
+
+/**
+ * Session Memory - L2 memory, saved on session exit (synced)
+ */
+export interface LoroSessionMemory {
   id: string;
   sessionId: string;
-  content: string;
+  topic?: string;            // Discussion topic
+  turnCount: number;         // Total conversation turns
+  summary: string;           // Brief summary
+  status: 'completed' | 'abandoned';
+  artifactId?: string;       // If user saved an artifact
   materialIds: string[];
   createdAt: number;
+  exitedAt: number;
 }
 
 /**
@@ -189,43 +205,154 @@ export function getAllMaterials(): LoroMaterial[] {
   return result.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-// ============ Outputs Operations ============
+// ============ Artifacts Operations ============
 
-function getOutputsMap(): LoroMap {
-  return getDoc().getMap('outputs');
+function getArtifactsMap(): LoroMap {
+  return getDoc().getMap('artifacts');
 }
 
 /**
- * Add a new output
+ * Add a new artifact
  */
-export function addOutput(output: LoroOutput): void {
-  const outputs = getOutputsMap();
-  const o = outputs.setContainer(output.id, new LoroMap());
-  o.set('id', output.id);
-  o.set('sessionId', output.sessionId);
-  o.set('content', output.content);
-  o.set('materialIds', JSON.stringify(output.materialIds));
-  o.set('createdAt', output.createdAt);
+export function addArtifact(artifact: LoroArtifact): void {
+  const artifacts = getArtifactsMap();
+  const a = artifacts.setContainer(artifact.id, new LoroMap());
+  a.set('id', artifact.id);
+  a.set('content', artifact.content);
+  a.set('materialIds', JSON.stringify(artifact.materialIds));
+  if (artifact.anchor) {
+    a.set('anchor', artifact.anchor);
+  }
+  a.set('createdAt', artifact.createdAt);
   getDoc().commit();
   scheduleSave();
 }
 
 /**
- * Get all outputs
+ * Get all artifacts
  */
-export function getAllOutputs(): LoroOutput[] {
-  const outputs = getOutputsMap();
-  const result: LoroOutput[] = [];
+export function getAllArtifacts(): LoroArtifact[] {
+  const artifacts = getArtifactsMap();
+  const result: LoroArtifact[] = [];
 
-  for (const [, value] of outputs.entries()) {
+  for (const [, value] of artifacts.entries()) {
     if (!(value instanceof LoroMap)) continue;
-    const o = value;
+    const a = value;
     result.push({
-      id: o.get('id') as string,
-      sessionId: o.get('sessionId') as string,
-      content: o.get('content') as string,
-      materialIds: JSON.parse(o.get('materialIds') as string),
-      createdAt: o.get('createdAt') as number,
+      id: a.get('id') as string,
+      content: a.get('content') as string,
+      materialIds: JSON.parse(a.get('materialIds') as string),
+      anchor: a.get('anchor') as string | undefined,
+      createdAt: a.get('createdAt') as number,
+    });
+  }
+
+  return result.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+// ============ Session Memory Operations ============
+
+function getSessionMemoriesMap(): LoroMap {
+  return getDoc().getMap('sessionMemories');
+}
+
+/**
+ * Add a new session memory
+ */
+export function addSessionMemory(memory: LoroSessionMemory): void {
+  const memories = getSessionMemoriesMap();
+  const m = memories.setContainer(memory.id, new LoroMap());
+  m.set('id', memory.id);
+  m.set('sessionId', memory.sessionId);
+  if (memory.topic) {
+    m.set('topic', memory.topic);
+  }
+  m.set('turnCount', memory.turnCount);
+  m.set('summary', memory.summary);
+  m.set('status', memory.status);
+  if (memory.artifactId) {
+    m.set('artifactId', memory.artifactId);
+  }
+  m.set('materialIds', JSON.stringify(memory.materialIds));
+  m.set('createdAt', memory.createdAt);
+  m.set('exitedAt', memory.exitedAt);
+  getDoc().commit();
+  scheduleSave();
+}
+
+/**
+ * Update an existing session memory
+ */
+export function updateSessionMemory(
+  id: string,
+  updates: Partial<Pick<LoroSessionMemory, 'turnCount' | 'summary' | 'status' | 'artifactId' | 'exitedAt'>>
+): void {
+  const memories = getSessionMemoriesMap();
+  const m = memories.get(id);
+  if (!m || !(m instanceof LoroMap)) return;
+
+  if (updates.turnCount !== undefined) {
+    m.set('turnCount', updates.turnCount);
+  }
+  if (updates.summary !== undefined) {
+    m.set('summary', updates.summary);
+  }
+  if (updates.status !== undefined) {
+    m.set('status', updates.status);
+  }
+  if (updates.artifactId !== undefined) {
+    m.set('artifactId', updates.artifactId);
+  }
+  if (updates.exitedAt !== undefined) {
+    m.set('exitedAt', updates.exitedAt);
+  }
+  getDoc().commit();
+  scheduleSave();
+}
+
+/**
+ * Get a session memory by ID
+ */
+export function getSessionMemory(id: string): LoroSessionMemory | undefined {
+  const memories = getSessionMemoriesMap();
+  const m = memories.get(id);
+  if (!m || !(m instanceof LoroMap)) return undefined;
+
+  return {
+    id: m.get('id') as string,
+    sessionId: m.get('sessionId') as string,
+    topic: m.get('topic') as string | undefined,
+    turnCount: m.get('turnCount') as number,
+    summary: m.get('summary') as string,
+    status: m.get('status') as 'completed' | 'abandoned',
+    artifactId: m.get('artifactId') as string | undefined,
+    materialIds: JSON.parse(m.get('materialIds') as string),
+    createdAt: m.get('createdAt') as number,
+    exitedAt: m.get('exitedAt') as number,
+  };
+}
+
+/**
+ * Get all session memories
+ */
+export function getAllSessionMemories(): LoroSessionMemory[] {
+  const memories = getSessionMemoriesMap();
+  const result: LoroSessionMemory[] = [];
+
+  for (const [, value] of memories.entries()) {
+    if (!(value instanceof LoroMap)) continue;
+    const m = value;
+    result.push({
+      id: m.get('id') as string,
+      sessionId: m.get('sessionId') as string,
+      topic: m.get('topic') as string | undefined,
+      turnCount: m.get('turnCount') as number,
+      summary: m.get('summary') as string,
+      status: m.get('status') as 'completed' | 'abandoned',
+      artifactId: m.get('artifactId') as string | undefined,
+      materialIds: JSON.parse(m.get('materialIds') as string),
+      createdAt: m.get('createdAt') as number,
+      exitedAt: m.get('exitedAt') as number,
     });
   }
 

@@ -5,6 +5,7 @@ import { Activation } from './pages/Activation';
 import { Session } from './pages/Session';
 import { Insights } from './pages/Insights';
 import { RawLibrary } from './pages/RawLibrary';
+import { Sessions } from './pages/Sessions';
 import { useMaterialsStore } from './lib/store/materials';
 
 function App() {
@@ -34,6 +35,7 @@ function App() {
           <Route path="practice" element={<Session />} />
           <Route path="insights" element={<Insights />} />
           <Route path="library" element={<RawLibrary />} />
+          <Route path="sessions" element={<Sessions />} />
         </Route>
       </Routes>
     </BrowserRouter>
