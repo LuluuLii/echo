@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { SessionHistory } from '../SessionHistory';
-import { type RawMaterial } from '../../lib/store/materials';
+import { type RawMaterial, type SessionMemory } from '../../lib/store/materials';
 
 interface TopicInputPhaseProps {
   topic: string;
@@ -18,6 +18,8 @@ interface TopicInputPhaseProps {
   onTopicSearch: () => void;
   onExploreRandom: () => void;
   onClearSemanticResults: () => void;
+  onResumeSession: (session: SessionMemory) => void;
+  onDeleteSession: (session: SessionMemory) => void;
 }
 
 export function TopicInputPhase({
@@ -36,6 +38,8 @@ export function TopicInputPhase({
   onTopicSearch,
   onExploreRandom,
   onClearSemanticResults,
+  onResumeSession,
+  onDeleteSession,
 }: TopicInputPhaseProps) {
   const navigate = useNavigate();
 
@@ -136,7 +140,14 @@ export function TopicInputPhase({
       {/* Incomplete Sessions */}
       <div className="mt-8">
         <h3 className="text-sm font-medium text-echo-text mb-3">Continue where you left off</h3>
-        <SessionHistory limit={3} showViewAll={true} filterStatus="abandoned" />
+        <SessionHistory
+          limit={3}
+          showViewAll={true}
+          showDelete={true}
+          filterStatus="abandoned"
+          onSessionClick={onResumeSession}
+          onSessionDelete={onDeleteSession}
+        />
       </div>
 
       {materials.length === 0 && (

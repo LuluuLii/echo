@@ -359,6 +359,16 @@ export function getAllSessionMemories(): LoroSessionMemory[] {
   return result.sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/**
+ * Delete a session memory
+ */
+export function deleteSessionMemory(id: string): void {
+  const memories = getSessionMemoriesMap();
+  memories.delete(id);
+  getDoc().commit();
+  scheduleSave();
+}
+
 // ============ Sessions Operations ============
 
 function getSessionsMap(): LoroMap {

@@ -28,8 +28,8 @@ export function ChatContextPanel({
     : null;
 
   return (
-    <>
-      {/* Context Toggle Buttons */}
+    <div className="mb-3">
+      {/* Context Toggle Buttons - Top Bar */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setShowContext(!showContext)}
@@ -67,9 +67,9 @@ export function ChatContextPanel({
         )}
       </div>
 
-      {/* Context Panel Content */}
+      {/* Context Panel Content - Below Buttons */}
       {showContext && (
-        <div className="bg-white rounded-xl border border-gray-100 mb-4 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-100 mt-3 overflow-hidden">
           {expandedSection === 'card' && card.livedExperience && (
             <div className="p-4">
               <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">
@@ -148,6 +148,6 @@ export function ChatContextPanel({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }

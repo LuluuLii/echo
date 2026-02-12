@@ -39,15 +39,8 @@ export function ChatPhase({
 }: ChatPhaseProps) {
   return (
     <div className="flex flex-col h-[calc(100vh-12rem)]">
-      {/* Top Bar: Context Toggle + Exit */}
-      <div className="flex items-center justify-between mb-3">
-        <ChatContextPanel
-          card={card}
-          sourceMaterials={sourceMaterials}
-          onExpressionClick={setInputText}
-        />
-
-        {/* Exit Button */}
+      {/* Top Bar: Exit Button */}
+      <div className="flex items-center justify-end mb-2">
         <button
           onClick={onExit}
           className="px-3 py-1.5 rounded-lg text-xs text-echo-hint hover:text-echo-muted hover:bg-gray-100 transition-colors"
@@ -55,6 +48,13 @@ export function ChatPhase({
           Exit
         </button>
       </div>
+
+      {/* Context Panel */}
+      <ChatContextPanel
+        card={card}
+        sourceMaterials={sourceMaterials}
+        onExpressionClick={setInputText}
+      />
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto pb-4">

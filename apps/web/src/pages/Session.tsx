@@ -4,20 +4,20 @@ import { useMaterialsStore, type RawMaterial, type ActivationCard, type SessionM
 import { semanticSearch, isModelLoaded, isModelLoading, setProgressCallback, preloadModel } from '../lib/embedding';
 import { generateActivationCard } from '../lib/activation-templates';
 import { saveStreamSnapshot, clearStreamSnapshot, type StreamSnapshot } from '../lib/stream-memory';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   TopicInputPhase,
-  MaterialSelectionPhase,
-  ActivationPreviewPhase,
+  ActivationReadyPhase,
   ChatPhase,
   type Message,
 } from '../components/session';
 
-type SessionPhase = 'topic-input' | 'material-selection' | 'activation-preview' | 'chat';
+type SessionPhase = 'topic-input' | 'activation-ready' | 'chat';
 
 export function Session() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentCard, materials, setCurrentCard, clearCurrentCard, saveArtifact, saveSessionMemory, updateSessionMemory } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, clearCurrentCard, saveArtifact, saveSessionMemory, updateSessionMemory, deleteSessionMemory } = useMaterialsStore();
 
   // Check if resuming a session from navigation state
   const resumeSession = (location.state as { resumeSession?: SessionMemory })?.resumeSession;
@@ -68,6 +68,10 @@ export function Session() {
   const [inputText, setInputText] = useState('');
   const [isComplete, setIsComplete] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<SessionMemory | null>(null);
 
   // Derived state
   const sourceMaterials = generatedCard
@@ -206,47 +210,75 @@ export function Session() {
     }
   }, [topic, materials]);
 
+  // Search and auto-generate activation card
   const handleTopicSearch = async () => {
+    let targetMaterials: RawMaterial[] = [];
+
     if (searchMode === 'semantic' && topic.trim()) {
       setIsSearching(true);
       try {
         const results = await semanticSearch(topic, materials.map((m) => ({ id: m.id, content: m.content })), 10);
         setSemanticResults(results);
-        const resultMaterials = results.map((r) => materials.find((m) => m.id === r.id)).filter((m): m is RawMaterial => m !== undefined);
-        if (resultMaterials.length > 0) {
-          setSelectedMaterials(resultMaterials.slice(0, 5));
-          setPhase('material-selection');
-        }
+        targetMaterials = results.map((r) => materials.find((m) => m.id === r.id)).filter((m): m is RawMaterial => m !== undefined);
       } catch (error) {
         console.error('Semantic search failed:', error);
-      } finally {
         setIsSearching(false);
+        return;
       }
-    } else if (filteredMaterials.length > 0) {
-      setSelectedMaterials(filteredMaterials.slice(0, 5));
-      setPhase('material-selection');
+      setIsSearching(false);
+    } else {
+      targetMaterials = filteredMaterials;
+    }
+
+    if (targetMaterials.length === 0) return;
+
+    // Auto-select top materials and generate card
+    const selected = targetMaterials.slice(0, 5);
+    setSelectedMaterials(selected);
+    setIsGenerating(true);
+
+    try {
+      const cardData = await generateActivationCard(selected.map((m) => ({ id: m.id, content: m.content, note: m.note })));
+      setGeneratedCard(cardData);
+      setCurrentCard(cardData);
+      setPhase('activation-ready');
+    } catch (error) {
+      console.error('Failed to generate card:', error);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const handleExploreRandom = () => {
-    if (materials.length >= 2) {
-      const shuffled = [...materials].sort(() => Math.random() - 0.5);
-      setSelectedMaterials(shuffled.slice(0, Math.min(4, shuffled.length)));
-      setTopic('(random exploration)');
-      setPhase('material-selection');
+  const handleExploreRandom = async () => {
+    if (materials.length < 2) return;
+
+    const shuffled = [...materials].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(4, shuffled.length));
+    setSelectedMaterials(selected);
+    setTopic('(random exploration)');
+    setIsGenerating(true);
+
+    try {
+      const cardData = await generateActivationCard(selected.map((m) => ({ id: m.id, content: m.content, note: m.note })));
+      setGeneratedCard(cardData);
+      setCurrentCard(cardData);
+      setPhase('activation-ready');
+    } catch (error) {
+      console.error('Failed to generate card:', error);
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const handleGenerateCard = async () => {
+  const handleRegenerate = async () => {
     if (selectedMaterials.length === 0) return;
     setIsGenerating(true);
     try {
       const cardData = await generateActivationCard(selectedMaterials.map((m) => ({ id: m.id, content: m.content, note: m.note })));
       setGeneratedCard(cardData);
       setCurrentCard(cardData);
-      setPhase('activation-preview');
     } catch (error) {
-      console.error('Failed to generate card:', error);
+      console.error('Failed to regenerate card:', error);
     } finally {
       setIsGenerating(false);
     }
@@ -257,6 +289,45 @@ export function Session() {
     if (generatedCard) {
       setMessages([{ id: crypto.randomUUID(), role: 'echo', content: generatedCard.invitation }]);
     }
+  };
+
+  const handleResumeSession = (session: SessionMemory) => {
+    // Reset current state
+    sessionIdRef.current = session.sessionId;
+    sessionCreatedAtRef.current = session.createdAt;
+    sessionMemoryIdRef.current = session.id;
+    sessionSavedRef.current = false;
+
+    // Load session data
+    setTopic(session.topic || '');
+    const resumedMaterials = materials.filter((m) => session.materialIds.includes(m.id));
+    setSelectedMaterials(resumedMaterials);
+
+    // Go to chat phase
+    setMessages([{
+      id: crypto.randomUUID(),
+      role: 'echo',
+      content: `Welcome back! Let's continue exploring "${session.topic || 'your thoughts'}". Where would you like to pick up?`,
+    }]);
+    setPhase('chat');
+  };
+
+  const handleDeleteSession = (session: SessionMemory) => {
+    setSessionToDelete(session);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteSession = () => {
+    if (sessionToDelete) {
+      deleteSessionMemory(sessionToDelete.id);
+    }
+    setDeleteDialogOpen(false);
+    setSessionToDelete(null);
+  };
+
+  const cancelDeleteSession = () => {
+    setDeleteDialogOpen(false);
+    setSessionToDelete(null);
   };
 
   const handleSend = async () => {
@@ -362,46 +433,49 @@ export function Session() {
 
   if (phase === 'topic-input') {
     return (
-      <TopicInputPhase
-        topic={topic}
-        setTopic={setTopic}
-        searchMode={searchMode}
-        setSearchMode={setSearchMode}
-        isSearching={isSearching}
-        modelProgress={modelProgress}
-        modelStatus={modelStatus}
-        isModelLoaded={isModelLoaded()}
-        filteredMaterials={filteredMaterials}
-        semanticResults={semanticResults}
-        materials={materials}
-        onSemanticSearch={handleSemanticSearch}
-        onTopicSearch={handleTopicSearch}
-        onExploreRandom={handleExploreRandom}
-        onClearSemanticResults={() => setSemanticResults([])}
-      />
+      <>
+        <TopicInputPhase
+          topic={topic}
+          setTopic={setTopic}
+          searchMode={searchMode}
+          setSearchMode={setSearchMode}
+          isSearching={isSearching || isGenerating}
+          modelProgress={modelProgress}
+          modelStatus={modelStatus}
+          isModelLoaded={isModelLoaded()}
+          filteredMaterials={filteredMaterials}
+          semanticResults={semanticResults}
+          materials={materials}
+          onSemanticSearch={handleSemanticSearch}
+          onTopicSearch={handleTopicSearch}
+          onExploreRandom={handleExploreRandom}
+          onClearSemanticResults={() => setSemanticResults([])}
+          onResumeSession={handleResumeSession}
+          onDeleteSession={handleDeleteSession}
+        />
+        <ConfirmDialog
+          isOpen={deleteDialogOpen}
+          title="Delete Session"
+          message={`Are you sure you want to delete "${sessionToDelete?.topic || 'this session'}"? This action cannot be undone.`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          confirmVariant="danger"
+          onConfirm={confirmDeleteSession}
+          onCancel={cancelDeleteSession}
+        />
+      </>
     );
   }
 
-  if (phase === 'material-selection') {
+  if (phase === 'activation-ready' && generatedCard) {
     return (
-      <MaterialSelectionPhase
+      <ActivationReadyPhase
         topic={topic}
-        filteredMaterials={filteredMaterials}
-        selectedMaterials={selectedMaterials}
-        setSelectedMaterials={setSelectedMaterials}
-        semanticResults={semanticResults}
-        isGenerating={isGenerating}
-        onBack={() => setPhase('topic-input')}
-        onGenerateCard={handleGenerateCard}
-      />
-    );
-  }
-
-  if (phase === 'activation-preview' && generatedCard) {
-    return (
-      <ActivationPreviewPhase
         card={generatedCard}
-        onBack={() => setPhase('material-selection')}
+        selectedMaterials={selectedMaterials}
+        isRegenerating={isGenerating}
+        onBack={() => setPhase('topic-input')}
+        onRegenerate={handleRegenerate}
         onStartChat={handleStartChat}
       />
     );

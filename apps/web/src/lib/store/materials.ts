@@ -11,6 +11,7 @@ import {
   addSessionMemory as loroAddSessionMemory,
   updateSessionMemory as loroUpdateSessionMemory,
   getSessionMemory as loroGetSessionMemory,
+  deleteSessionMemory as loroDeleteSessionMemory,
   getAllSessionMemories,
   type LoroMaterial,
   type LoroArtifact,
@@ -96,6 +97,7 @@ interface MaterialsStore {
     updates: Partial<Pick<SessionMemory, 'turnCount' | 'summary' | 'status' | 'artifactId' | 'exitedAt'>>
   ) => void;
   getSessionMemory: (id: string) => SessionMemory | undefined;
+  deleteSessionMemory: (id: string) => void;
 
   // Card operations (not persisted)
   setCurrentCard: (card: ActivationCard) => void;
@@ -356,6 +358,16 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     // Fallback to Loro
     const loro = loroGetSessionMemory(id);
     return loro ? toSessionMemory(loro) : undefined;
+  },
+
+  deleteSessionMemory: (id) => {
+    // Delete from Loro
+    loroDeleteSessionMemory(id);
+
+    // Update Zustand state
+    set((state) => ({
+      sessionMemories: state.sessionMemories.filter((m) => m.id !== id),
+    }));
   },
 
   setCurrentCard: (card) => {
