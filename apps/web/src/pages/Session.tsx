@@ -4,6 +4,8 @@ import { useMaterialsStore, type RawMaterial, type ActivationCard, type SessionM
 import { semanticSearch, isModelLoaded, isModelLoading, setProgressCallback, preloadModel } from '../lib/embedding';
 import { generateActivationCard } from '../lib/activation-templates';
 import { saveStreamSnapshot, clearStreamSnapshot, type StreamSnapshot } from '../lib/stream-memory';
+import { getLLMService } from '../lib/llm';
+import { buildEchoMessages, getRandomFallback } from '../lib/llm/prompts/echo-companion';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   TopicInputPhase,
@@ -339,24 +341,44 @@ export function Session() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3000/api/session/message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: 'demo-session',
-          message: userMessage.content,
-          context: {
-            card: generatedCard,
-            materials: sourceMaterials.map((m) => ({ content: m.content, note: m.note })),
-            history: messages.map((m) => ({ id: m.id, role: m.role, content: m.content, timestamp: Date.now() })),
-          },
-        }),
-      });
-      const data = await response.json();
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: data.reply }]);
+      const llmService = getLLMService();
+      const activeProvider = llmService.getActiveProvider();
+
+      // Build conversation history for LLM
+      const conversationHistory = [...messages, userMessage].map((m) => ({
+        role: m.role === 'echo' ? 'assistant' as const : 'user' as const,
+        content: m.content,
+      }));
+
+      // If no LLM available, use fallback responses
+      if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
+        const fallbackType = conversationHistory.length <= 2 ? 'greeting' : 'encouragement';
+        const reply = getRandomFallback(fallbackType as 'greeting' | 'encouragement');
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: reply }]);
+        return;
+      }
+
+      // Build messages with Echo companion context
+      const cardForPrompt = generatedCard || {
+        emotionalAnchor: card.emotionalAnchor || 'Connect with these materials',
+        livedExperience: card.livedExperience || 'Explore your own experience',
+        expressions: card.expressions.length > 0 ? card.expressions : ['I think...', 'I feel...'],
+        invitation: card.invitation || 'Share what comes to mind',
+      };
+
+      const llmMessages = buildEchoMessages(
+        cardForPrompt,
+        sourceMaterials,
+        conversationHistory
+      );
+
+      console.log(`[Echo] Sending message with ${activeProvider.name}`);
+      const reply = await llmService.chat(llmMessages);
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: reply }]);
     } catch (error) {
       console.error('Failed to get response:', error);
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: "I'm here to help you express your thoughts. What would you like to say?" }]);
+      const fallback = getRandomFallback('encouragement');
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: fallback }]);
     } finally {
       setIsLoading(false);
     }

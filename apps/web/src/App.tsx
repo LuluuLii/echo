@@ -8,12 +8,17 @@ import { RawLibrary } from './pages/RawLibrary';
 import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { useMaterialsStore } from './lib/store/materials';
+import { initializeLLMService } from './lib/llm';
 
 function App() {
   const { init, initialized, loading } = useMaterialsStore();
 
   useEffect(() => {
     init();
+    // Initialize LLM service in parallel (doesn't block app)
+    initializeLLMService().then(() => {
+      console.log('[LLM] Service initialized');
+    });
   }, [init]);
 
   if (loading) {

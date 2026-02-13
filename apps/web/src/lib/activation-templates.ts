@@ -1,11 +1,15 @@
 /**
- * Offline Activation Card Templates
+ * Activation Card Generation
  *
- * These templates are used when AI is not available.
- * They provide a meaningful activation experience using the user's own materials.
+ * Uses LLMService when available, falls back to templates when not.
  */
 
 import type { ActivationCard } from './store/materials';
+import { getLLMService } from './llm';
+import {
+  buildActivationPrompt,
+  parseActivationResponse,
+} from './llm/prompts/activation';
 
 interface ActivationTemplate {
   id: string;
@@ -214,41 +218,55 @@ export function generateOfflineCard(
 }
 
 /**
- * Generate activation card - uses offline generation by default.
- * AI generation can be enabled when API is properly configured.
+ * Generate activation card using LLMService.
+ * Falls back to offline templates when LLM is not available.
  */
 export async function generateActivationCard(
   materials: Array<{ id: string; content: string; note?: string }>,
-  options: { useAI?: boolean; apiEndpoint?: string } = {}
+  topic?: string
 ): Promise<ActivationCard> {
-  const { useAI = false, apiEndpoint = 'http://localhost:3000/api/activation/generate' } = options;
+  if (materials.length === 0) {
+    throw new Error('At least one material is required');
+  }
 
-  // Default to offline generation - always uses user's actual materials
-  if (!useAI) {
+  const llmService = getLLMService();
+  const activeProvider = llmService.getActiveProvider();
+
+  // If no provider is ready or using template provider, use offline generation
+  if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
+    console.log('[Activation] Using offline generation (no LLM available)');
     return generateOfflineCard(materials);
   }
 
   try {
-    const response = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        materialIds: materials.map((m) => m.id),
-        materials: materials.map((m) => ({
-          id: m.id,
-          content: m.content,
-          note: m.note,
-        })),
-      }),
-    });
+    console.log(`[Activation] Generating with ${activeProvider.name}`);
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+    // Build prompt and call LLM
+    const messages = buildActivationPrompt(
+      materials.map((m) => ({ ...m, id: m.id, createdAt: Date.now(), type: 'text' as const })),
+      topic
+    );
+    const response = await llmService.chat(messages);
+
+    // Parse the response
+    const parsed = parseActivationResponse(response);
+    if (parsed) {
+      return {
+        id: crypto.randomUUID(),
+        emotionalAnchor: parsed.emotionalAnchor,
+        livedExperience: parsed.livedExperience,
+        expressions: parsed.expressions,
+        invitation: parsed.invitation,
+        materialIds: materials.map((m) => m.id),
+        createdAt: Date.now(),
+      };
     }
 
-    return await response.json();
+    // If parsing failed, fall back to offline
+    console.log('[Activation] Failed to parse LLM response, using offline generation');
+    return generateOfflineCard(materials);
   } catch (error) {
-    console.log('[Activation] API unavailable, using offline generation:', error);
+    console.log('[Activation] LLM error, using offline generation:', error);
     return generateOfflineCard(materials);
   }
 }
