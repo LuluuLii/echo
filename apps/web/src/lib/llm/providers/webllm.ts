@@ -3,6 +3,9 @@
  *
  * Runs LLM models locally in the browser using WebGPU.
  * Requires WebGPU support and model download on first use.
+ *
+ * Note: @mlc-ai/web-llm is dynamically imported only when needed
+ * to avoid bundling the large dependency for users who don't use it.
  */
 
 import { BaseLLMProvider } from './base';
@@ -16,19 +19,8 @@ import {
 } from '../types';
 
 // WebLLM types (loaded dynamically)
-interface MLCEngine {
-  reload: (model: string) => Promise<void>;
-  chat: {
-    completions: {
-      create: (params: {
-        messages: Array<{ role: string; content: string }>;
-        temperature?: number;
-        max_tokens?: number;
-        stream?: boolean;
-      }) => Promise<{ choices: Array<{ message: { content: string } }> }>;
-    };
-  };
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MLCEngine = any;
 
 interface InitProgressReport {
   progress: number;
@@ -83,7 +75,15 @@ export class WebLLMProvider extends BaseLLMProvider {
 
     try {
       // Dynamically import WebLLM
-      const webllm = await import('@mlc-ai/web-llm');
+      // This allows the app to work without the dependency installed
+      let webllm: { CreateMLCEngine: (model: string, options: { initProgressCallback: (report: InitProgressReport) => void }) => Promise<MLCEngine> };
+      try {
+        webllm = await import('@mlc-ai/web-llm');
+      } catch {
+        throw new Error(
+          'WebLLM not installed. Run: pnpm add @mlc-ai/web-llm'
+        );
+      }
 
       // Create engine with progress callback
       this.engine = await webllm.CreateMLCEngine(this.config.model, {
