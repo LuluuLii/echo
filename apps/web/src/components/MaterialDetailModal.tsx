@@ -142,15 +142,50 @@ export function MaterialDetailModal({
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Original content */}
-              <div className="bg-gray-50 rounded-xl p-4">
-                <p className="text-echo-text leading-relaxed whitespace-pre-wrap">
-                  {material.content}
-                </p>
-              </div>
+              {/* File preview for file type */}
+              {material.type === 'file' && material.fileData && (
+                <div className="rounded-xl overflow-hidden bg-gray-100">
+                  {material.fileType === 'image' ? (
+                    <img
+                      src={material.fileData}
+                      alt={material.fileName || 'Image'}
+                      className="w-full max-h-96 object-contain"
+                    />
+                  ) : material.fileType === 'pdf' ? (
+                    <div className="p-8 text-center">
+                      <span className="text-5xl mb-4 block">📄</span>
+                      <p className="text-echo-text font-medium">{material.fileName}</p>
+                      <a
+                        href={material.fileData}
+                        download={material.fileName}
+                        className="text-blue-500 hover:text-blue-600 text-sm mt-2 inline-block"
+                      >
+                        Download PDF
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center">
+                      <span className="text-5xl mb-4 block">📁</span>
+                      <p className="text-echo-text font-medium">{material.fileName}</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* English translation */}
-              {material.contentEn && material.contentEn !== material.content ? (
+              {/* Original content / description */}
+              {(material.type === 'text' || (material.type === 'file' && material.content)) && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  {material.type === 'file' && (
+                    <p className="text-echo-hint text-xs uppercase tracking-wide mb-2">Description</p>
+                  )}
+                  <p className="text-echo-text leading-relaxed whitespace-pre-wrap">
+                    {material.content}
+                  </p>
+                </div>
+              )}
+
+              {/* English translation - only for text type */}
+              {material.type === 'text' && material.contentEn && material.contentEn !== material.content ? (
                 <div className="bg-blue-50 rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-echo-hint text-xs uppercase tracking-wide">
@@ -168,7 +203,7 @@ export function MaterialDetailModal({
                     {material.contentEn}
                   </p>
                 </div>
-              ) : (
+              ) : material.type === 'text' ? (
                 <button
                   onClick={() => handleTranslate(false)}
                   disabled={isTranslating}
@@ -176,7 +211,7 @@ export function MaterialDetailModal({
                 >
                   {isTranslating ? 'Translating...' : 'Translate to English'}
                 </button>
-              )}
+              ) : null}
 
               {material.note && (
                 <div className="border-l-2 border-echo-accent pl-4">

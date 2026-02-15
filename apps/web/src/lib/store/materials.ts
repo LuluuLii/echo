@@ -22,11 +22,17 @@ import { deleteEmbedding } from '../db';
 
 export interface RawMaterial {
   id: string;
-  type: 'text' | 'image';
-  content: string;
-  contentEn?: string;  // English translation of content
+  type: 'text' | 'file';
+  content: string;              // Text content or file description
+  contentEn?: string;           // English translation of content
   note?: string;
   createdAt: number;
+  // File-specific fields (only for type: 'file')
+  fileName?: string;            // Original file name
+  fileType?: 'image' | 'pdf' | 'document';  // File category
+  mimeType?: string;            // MIME type
+  fileData?: string;            // Base64 encoded file data
+  fileThumbnail?: string;       // Base64 thumbnail for preview
 }
 
 export interface ActivationCard {
@@ -74,7 +80,13 @@ interface MaterialsStore {
   reload: () => void;
 
   // Material operations
-  addMaterial: (content: string, type: 'text' | 'image', note?: string) => void;
+  addMaterial: (content: string, type: 'text' | 'file', note?: string, fileOptions?: {
+    fileName?: string;
+    fileType?: 'image' | 'pdf' | 'document';
+    mimeType?: string;
+    fileData?: string;
+    fileThumbnail?: string;
+  }) => void;
   updateMaterial: (id: string, content: string, note?: string) => void;
   setMaterialTranslation: (id: string, contentEn: string) => void;
   deleteMaterial: (id: string) => void;
@@ -118,6 +130,12 @@ function toRawMaterial(m: LoroMaterial): RawMaterial {
     contentEn: m.contentEn,
     note: m.note,
     createdAt: m.createdAt,
+    // File-specific fields
+    fileName: m.fileName,
+    fileType: m.fileType,
+    mimeType: m.mimeType,
+    fileData: m.fileData,
+    fileThumbnail: m.fileThumbnail,
   };
 }
 
@@ -257,7 +275,7 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     set({ materials, artifacts, sessionMemories });
   },
 
-  addMaterial: (content, type, note) => {
+  addMaterial: (content, type, note, fileOptions) => {
     const id = crypto.randomUUID();
     const createdAt = Date.now();
 
@@ -268,6 +286,12 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
       content,
       note,
       createdAt,
+      // File-specific fields
+      fileName: fileOptions?.fileName,
+      fileType: fileOptions?.fileType,
+      mimeType: fileOptions?.mimeType,
+      fileData: fileOptions?.fileData,
+      fileThumbnail: fileOptions?.fileThumbnail,
     });
 
     // Update Zustand state
@@ -277,12 +301,19 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
       content,
       note,
       createdAt,
+      // File-specific fields
+      fileName: fileOptions?.fileName,
+      fileType: fileOptions?.fileType,
+      mimeType: fileOptions?.mimeType,
+      fileData: fileOptions?.fileData,
+      fileThumbnail: fileOptions?.fileThumbnail,
     };
     set((state) => ({
       materials: [newMaterial, ...state.materials],
     }));
 
     // Generate embedding asynchronously (don't block UI)
+    // For files, use the content (description) for embedding
     getEmbedding(id, content).catch((error) => {
       console.warn('Failed to generate embedding for material:', id, error);
     });

@@ -4,15 +4,25 @@ import { loadSnapshot, saveSnapshot } from './db';
 /**
  * Material data stored in Loro (synced)
  * Note: embedding is NOT stored here, it's local-only
+ *
+ * Types:
+ * - 'text': Plain text content (content field has the text)
+ * - 'file': File attachment (content has description, fileData has base64)
  */
 export interface LoroMaterial {
   id: string;
-  type: 'text' | 'image';
-  content: string;
-  contentEn?: string;  // English translation of content
+  type: 'text' | 'file';
+  content: string;              // Text content or file description
+  contentEn?: string;           // English translation of content
   note?: string;
   createdAt: number;
   updatedAt: number;
+  // File-specific fields (only for type: 'file')
+  fileName?: string;            // Original file name
+  fileType?: 'image' | 'pdf' | 'document';  // File category
+  mimeType?: string;            // MIME type (image/png, application/pdf, etc.)
+  fileData?: string;            // Base64 encoded file data
+  fileThumbnail?: string;       // Base64 thumbnail for preview (optional)
 }
 
 /**
@@ -126,6 +136,22 @@ export function addMaterial(material: Omit<LoroMaterial, 'updatedAt'>): void {
   if (material.note !== undefined) {
     m.set('note', material.note);
   }
+  // File-specific fields
+  if (material.fileName !== undefined) {
+    m.set('fileName', material.fileName);
+  }
+  if (material.fileType !== undefined) {
+    m.set('fileType', material.fileType);
+  }
+  if (material.mimeType !== undefined) {
+    m.set('mimeType', material.mimeType);
+  }
+  if (material.fileData !== undefined) {
+    m.set('fileData', material.fileData);
+  }
+  if (material.fileThumbnail !== undefined) {
+    m.set('fileThumbnail', material.fileThumbnail);
+  }
   m.set('createdAt', material.createdAt);
   m.set('updatedAt', Date.now());
   getDoc().commit();
@@ -177,12 +203,18 @@ export function getMaterial(id: string): LoroMaterial | undefined {
 
   return {
     id: m.get('id') as string,
-    type: m.get('type') as 'text' | 'image',
+    type: m.get('type') as 'text' | 'file',
     content: m.get('content') as string,
     contentEn: m.get('contentEn') as string | undefined,
     note: m.get('note') as string | undefined,
     createdAt: m.get('createdAt') as number,
     updatedAt: m.get('updatedAt') as number,
+    // File-specific fields
+    fileName: m.get('fileName') as string | undefined,
+    fileType: m.get('fileType') as 'image' | 'pdf' | 'document' | undefined,
+    mimeType: m.get('mimeType') as string | undefined,
+    fileData: m.get('fileData') as string | undefined,
+    fileThumbnail: m.get('fileThumbnail') as string | undefined,
   };
 }
 
@@ -198,12 +230,18 @@ export function getAllMaterials(): LoroMaterial[] {
     const m = value;
     result.push({
       id: m.get('id') as string,
-      type: m.get('type') as 'text' | 'image',
+      type: m.get('type') as 'text' | 'file',
       content: m.get('content') as string,
       contentEn: m.get('contentEn') as string | undefined,
       note: m.get('note') as string | undefined,
       createdAt: m.get('createdAt') as number,
       updatedAt: m.get('updatedAt') as number,
+      // File-specific fields
+      fileName: m.get('fileName') as string | undefined,
+      fileType: m.get('fileType') as 'image' | 'pdf' | 'document' | undefined,
+      mimeType: m.get('mimeType') as string | undefined,
+      fileData: m.get('fileData') as string | undefined,
+      fileThumbnail: m.get('fileThumbnail') as string | undefined,
     });
   }
 
