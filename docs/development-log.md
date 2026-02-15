@@ -108,7 +108,15 @@ echo/
 - [x] 多文件批量导入
 - [x] 预览和单独添加
 
-#### 10. 数据持久化 ✅
+#### 10. Apple Notes 导入 ✅ (macOS)
+
+- [x] AppleScript 读取 Notes 应用
+- [x] 文件夹列表浏览
+- [x] 笔记多选批量导入
+- [x] 批量处理优化 (5 notes/batch)
+- [ ] 性能优化 (导入大量笔记时仍较慢)
+
+#### 11. 数据持久化 ✅
 
 - [x] Loro CRDT + IndexedDB 持久化
 - [x] Embedding 向量本地存储
@@ -220,39 +228,78 @@ daaefb8 feat: Add two entry points for Echo session
 > 详细设计见 [product-design-v2.md](./product-design-v2.md)
 >
 > 同步架构见 [sync-architecture.md](./sync-architecture.md)
+>
+> Insights 设计见 [insights-design.md](./insights-design.md)
 
-### Phase 1: 数据持久化 + 召回检索 ✅ 已完成
+### 已完成
 
-1. ✅ **Loro + IndexedDB 持久化** - 从一开始使用 Loro 数据格式
-2. ✅ **关键词搜索 UI** - Practice 页面添加搜索框
-3. ✅ **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
-4. ✅ **语义相似度搜索** - 基于 embedding 的智能召回
+- ✅ **Phase 1: 数据持久化 + 召回检索**
+- ✅ **Phase 2: iCloud 同步** (基础版)
+- ✅ **Phase 3: 智能推荐** (聚类 + 相似推荐)
+- ✅ **Phase 4 V1: Insights Territory** (基础可视化)
 
-### Phase 2: iCloud 同步 ⬅️ 当前优先
+---
 
-1. **File System Access API** - Web 端访问 iCloud Drive
-2. **手动/定期同步** - IndexedDB → iCloud 单向推送
-3. **从 iCloud 恢复** - 新设备初始化
-4. **Settings UI** - 同步状态、手动同步按钮
+### Web V1 Roadmap
 
-### Phase 3: 智能推荐
+#### Step 1: 导入功能优化 ✅ 完成
 
-1. **自动聚类** - K-Means 聚类 + 标签生成
-2. **相似素材推荐** - 查看时显示相关内容
-3. ✅ **Activation Card 模板** - 离线模板兜底
+- [x] 拖拽导入 (Web) - 支持拖拽文本和文件 (.md, .txt)
+- [x] 剪贴板快捷粘贴 - Cmd+V / Ctrl+V 快捷键
+- [x] 导入时去重检测 - 基于 embedding 相似度检测
+- [x] 智能分段优化 - 支持多种分段策略 (标题/段落/列表等)
 
-### Phase 4: Insights 可视化
+#### Step 2: Memory 整体方案优化 ⬅️ 当前
 
-1. **聚类地图** - 主题分布可视化
-2. **时间轴** - 积累成长轨迹
-3. **用户洞察** - 关注主题、活跃度分析
+重构长期记忆层，分为多个维度：
 
-### Phase 5: Mobile 端
+- [ ] **Artifacts** - 精炼表达的存储和关联
+- [ ] **User Profile** - 用户画像（兴趣、表达风格、常用词汇）
+- [ ] **Growth Tracking** - 成长轨迹（练习历史、进步记录）
+- [ ] **Session Memory** - 对话记忆优化
 
-1. **Mobile UI** - 完整实现 Mobile 端页面
-2. **ONNX Runtime** - 端上 Embedding 模型
-3. **iCloud 原生访问** - 替代 File System Access API
-4. **TestFlight** - EAS Build 发布测试
+#### Step 3: Memory 整合到 Insights
+
+- [ ] Artifacts 在 Territory 上展示（山顶结晶）
+- [ ] Session 练习历史可视化
+- [ ] 时间维度展示
+- [ ] Blind Spots 增强
+
+#### Step 4: Insight 视觉风格完善
+
+- [ ] 配色方案定稿
+- [ ] 动画效果（进入/hover/zoom）
+- [ ] 等高线样式优化
+- [ ] 响应式适配
+
+#### Step 5: 整体 UI 风格细化
+
+- [ ] 设计系统统一（颜色/字体/间距）
+- [ ] 组件库完善
+- [ ] 暗色模式支持
+
+#### Step 6: UI 和交互流程打磨
+
+- [ ] 用户流程优化
+- [ ] 交互细节完善
+- [ ] Bug bash
+- [ ] 性能优化
+
+#### Step 7: Evaluation Pipeline
+
+- [ ] 自动化测试
+- [ ] 用户体验指标
+- [ ] LLM 输出质量评估
+
+---
+
+### Web V1 完成后 → Mobile 端
+
+- [ ] Mobile UI 完整实现
+- [ ] ONNX Runtime 端上 Embedding
+- [ ] iCloud 原生访问
+- [ ] Share Extension / 相机扫描
+- [ ] TestFlight 发布
 
 ---
 
@@ -333,9 +380,12 @@ daaefb8 feat: Add two entry points for Echo session
 - [ ] 语音录入
 
 **Future**:
-- [ ] Notion/Apple Notes 集成
+- [ ] Notion 集成
 - [ ] PDF/DOCX 解析
 - [ ] 智能分段算法
+- [ ] Apple Notes 导入性能优化
+  - 当前：批量 5 notes/AppleScript 调用
+  - 待探索：并发批处理、SQLite 直接读取 (需 Full Disk Access)
 
 ## 设计决策记录
 
