@@ -8,6 +8,21 @@ import {
   DEFAULT_MODELS,
 } from '../lib/llm';
 import { WebLLMProvider } from '../lib/llm/providers/webllm';
+import {
+  isFileSystemAccessSupported,
+  getICloudStatus,
+  getLastSyncTime,
+  connectToICloud,
+  disconnectFromICloud,
+  syncToICloud,
+  restoreFromICloud,
+  mergeFromICloud,
+  enableAutoSync,
+  disableAutoSync,
+  isAutoSyncEnabled,
+  requestPermission,
+} from '../lib/icloud';
+import { useMaterialsStore } from '../lib/store/materials';
 
 type CloudProvider = 'openai' | 'anthropic' | 'gemini';
 type ActiveProviderType = 'cloud' | 'local' | 'edge' | 'template';
@@ -42,6 +57,19 @@ export function Settings() {
 
   // Translation provider setting
   const [translationProvider, setTranslationProvider] = useState<'active' | string>('active');
+
+  // iCloud sync state
+  const [icloudSupported] = useState(isFileSystemAccessSupported());
+  const [icloudConnected, setIcloudConnected] = useState(false);
+  const [icloudFolderName, setIcloudFolderName] = useState<string | null>(null);
+  const [icloudHasPermission, setIcloudHasPermission] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(isAutoSyncEnabled());
+
+  const { reload: reloadStore } = useMaterialsStore();
 
   // Initialize
   useEffect(() => {
@@ -93,6 +121,18 @@ export function Settings() {
       }
     }
     init();
+
+    // Load iCloud status
+    async function loadICloudStatus() {
+      const status = await getICloudStatus();
+      setIcloudConnected(status.connected);
+      setIcloudFolderName(status.name || null);
+      setIcloudHasPermission(status.hasPermission);
+
+      const lastSync = await getLastSyncTime();
+      setLastSyncTime(lastSync);
+    }
+    loadICloudStatus();
   }, []);
 
   // Load cloud provider config when switching
@@ -210,6 +250,113 @@ export function Settings() {
     const service = getLLMService();
     service.updateConfig({ translationProvider });
     setConfig(service.getConfig());
+  };
+
+  // iCloud handlers
+  const handleConnectICloud = async () => {
+    setSyncError(null);
+    const result = await connectToICloud();
+    if (result.success) {
+      setIcloudConnected(true);
+      setIcloudFolderName(result.name || null);
+      setIcloudHasPermission(true);
+      setSyncSuccess('Connected to iCloud folder');
+      setTimeout(() => setSyncSuccess(null), 3000);
+    } else if (result.error && result.error !== 'User cancelled') {
+      setSyncError(result.error);
+    }
+  };
+
+  const handleDisconnectICloud = async () => {
+    await disconnectFromICloud();
+    setIcloudConnected(false);
+    setIcloudFolderName(null);
+    setIcloudHasPermission(false);
+    setLastSyncTime(null);
+    disableAutoSync();
+    setAutoSyncEnabled(false);
+  };
+
+  const handleRequestPermission = async () => {
+    const granted = await requestPermission();
+    setIcloudHasPermission(granted);
+    if (!granted) {
+      setSyncError('Permission denied. Please reconnect.');
+    }
+  };
+
+  const handleSyncToICloud = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+
+    const result = await syncToICloud();
+    setIsSyncing(false);
+
+    if (result.success) {
+      setLastSyncTime(Date.now());
+      setSyncSuccess('Pushed to iCloud');
+      setTimeout(() => setSyncSuccess(null), 3000);
+    } else {
+      setSyncError(result.error || 'Sync failed');
+    }
+  };
+
+  const handleRestoreFromICloud = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+
+    const result = await restoreFromICloud();
+    setIsSyncing(false);
+
+    if (result.success) {
+      setLastSyncTime(Date.now());
+      reloadStore(); // Reload Zustand store with new data
+      setSyncSuccess('Restored from iCloud');
+      setTimeout(() => setSyncSuccess(null), 3000);
+    } else {
+      setSyncError(result.error || 'Restore failed');
+    }
+  };
+
+  const handleMergeFromICloud = async () => {
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+
+    const result = await mergeFromICloud();
+    setIsSyncing(false);
+
+    if (result.success) {
+      setLastSyncTime(Date.now());
+      reloadStore(); // Reload Zustand store with merged data
+      const msg = result.newMaterials && result.newMaterials > 0
+        ? `Synced (${result.newMaterials} new materials)`
+        : 'Synced successfully';
+      setSyncSuccess(msg);
+      setTimeout(() => setSyncSuccess(null), 3000);
+    } else {
+      setSyncError(result.error || 'Sync failed');
+    }
+  };
+
+  const handleToggleAutoSync = (enabled: boolean) => {
+    if (enabled) {
+      enableAutoSync();
+    } else {
+      disableAutoSync();
+    }
+    setAutoSyncEnabled(enabled);
+  };
+
+  const formatLastSync = (timestamp: number | null): string => {
+    if (!timestamp) return 'Never';
+    const diff = Date.now() - timestamp;
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
+    return new Date(timestamp).toLocaleDateString();
   };
 
   const getStatusIcon = (providerId: string) => {
@@ -602,6 +749,125 @@ export function Settings() {
             )}
           </p>
         </div>
+      </section>
+
+      {/* iCloud Sync Section */}
+      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
+        <h2 className="text-lg font-medium text-echo-text mb-4">
+          ☁️ iCloud Sync
+        </h2>
+
+        {!icloudSupported ? (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+            <p className="text-amber-800 text-sm">
+              iCloud sync is not supported in this browser.
+              Please use Chrome, Edge, or Safari 15.2+ on macOS.
+            </p>
+          </div>
+        ) : !icloudConnected ? (
+          <div className="space-y-4">
+            <p className="text-echo-muted text-sm">
+              Connect to an iCloud Drive folder to sync your materials across devices.
+            </p>
+            <button
+              onClick={handleConnectICloud}
+              className="px-4 py-2 bg-echo-text text-white rounded-xl text-sm font-medium hover:bg-gray-700 transition-colors"
+            >
+              Connect to iCloud Folder
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Connection status */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-echo-text text-sm font-medium">
+                  {icloudHasPermission ? '✅' : '⚠️'} Connected to: {icloudFolderName}
+                </p>
+                <p className="text-echo-hint text-xs mt-1">
+                  Last sync: {formatLastSync(lastSyncTime)}
+                </p>
+              </div>
+              <button
+                onClick={handleDisconnectICloud}
+                className="text-echo-hint text-sm hover:text-red-500 transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
+
+            {/* Permission warning */}
+            {!icloudHasPermission && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-amber-700 text-sm mb-2">
+                  Permission expired. Click to re-authorize.
+                </p>
+                <button
+                  onClick={handleRequestPermission}
+                  className="text-amber-700 text-sm font-medium underline"
+                >
+                  Grant Permission
+                </button>
+              </div>
+            )}
+
+            {/* Sync buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleMergeFromICloud}
+                disabled={isSyncing || !icloudHasPermission}
+                className="px-4 py-2 bg-echo-text text-white rounded-xl text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
+              >
+                {isSyncing ? 'Syncing...' : 'Sync Now'}
+              </button>
+              <button
+                onClick={handleSyncToICloud}
+                disabled={isSyncing || !icloudHasPermission}
+                className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Push to iCloud
+              </button>
+              <button
+                onClick={handleRestoreFromICloud}
+                disabled={isSyncing || !icloudHasPermission}
+                className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Restore from iCloud
+              </button>
+            </div>
+
+            {/* Auto-sync toggle */}
+            <label className="flex items-center gap-2 text-sm text-echo-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoSyncEnabled}
+                onChange={(e) => handleToggleAutoSync(e.target.checked)}
+                disabled={!icloudHasPermission}
+                className="w-4 h-4"
+              />
+              Auto-sync every 5 minutes
+            </label>
+
+            {/* Success message */}
+            {syncSuccess && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-green-700 text-sm">✓ {syncSuccess}</p>
+              </div>
+            )}
+
+            {/* Error message */}
+            {syncError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm">✗ {syncError}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-echo-hint text-xs mt-4">
+          Sync uses Loro CRDT to merge changes automatically.
+          Embeddings are rebuilt locally after sync.
+        </p>
       </section>
 
       {/* Info */}

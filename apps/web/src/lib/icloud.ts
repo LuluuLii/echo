@@ -1,5 +1,6 @@
 import { db, META_KEYS } from './db';
-import { getDoc, persistNow } from './loro';
+import { getDoc, persistNow, getAllMaterials } from './loro';
+import { getEmbedding } from './embedding';
 
 const SYNC_FILE_NAME = 'echo-data.loro';
 
@@ -260,13 +261,17 @@ export async function restoreFromICloud(): Promise<{
 export async function mergeFromICloud(): Promise<{
   success: boolean;
   error?: string;
+  newMaterials?: number;
 }> {
   try {
+    const materialsBefore = getAllMaterials().length;
+
     const remoteSnapshot = await readFromICloud();
 
     if (!remoteSnapshot) {
       // No remote data, just sync local to iCloud
-      return syncToICloud();
+      const result = await syncToICloud();
+      return { ...result, newMaterials: 0 };
     }
 
     // Import remote data (Loro CRDT handles merging)
@@ -282,8 +287,80 @@ export async function mergeFromICloud(): Promise<{
     // Record sync time
     await setLastSyncTime(Date.now());
 
-    return { success: true };
+    // Count new materials
+    const materialsAfter = getAllMaterials().length;
+    const newMaterials = Math.max(0, materialsAfter - materialsBefore);
+
+    // Rebuild embeddings for new materials in background
+    if (newMaterials > 0) {
+      rebuildMissingEmbeddings();
+    }
+
+    return { success: true, newMaterials };
   } catch (error) {
     return { success: false, error: String(error) };
   }
+}
+
+/**
+ * Rebuild embeddings for materials that don't have them
+ * Runs in background, doesn't block
+ */
+function rebuildMissingEmbeddings(): void {
+  const materials = getAllMaterials();
+
+  // Process in background
+  (async () => {
+    console.log(`[iCloud] Rebuilding embeddings for ${materials.length} materials...`);
+    let rebuilt = 0;
+    for (const material of materials) {
+      try {
+        // getEmbedding will generate if missing
+        await getEmbedding(material.id, material.content);
+        rebuilt++;
+      } catch (e) {
+        console.warn(`[iCloud] Failed to generate embedding for ${material.id}:`, e);
+      }
+    }
+    console.log(`[iCloud] Rebuilt ${rebuilt} embeddings`);
+  })();
+}
+
+// Auto-sync interval handle
+let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Enable auto-sync at specified interval (default: 5 minutes)
+ */
+export function enableAutoSync(intervalMs = 5 * 60 * 1000): void {
+  disableAutoSync(); // Clear any existing interval
+
+  autoSyncInterval = setInterval(async () => {
+    const status = await getICloudStatus();
+    if (status.connected && status.hasPermission) {
+      console.log('[iCloud] Auto-syncing...');
+      const result = await mergeFromICloud();
+      console.log('[iCloud] Auto-sync result:', result);
+    }
+  }, intervalMs);
+
+  console.log(`[iCloud] Auto-sync enabled (every ${intervalMs / 1000}s)`);
+}
+
+/**
+ * Disable auto-sync
+ */
+export function disableAutoSync(): void {
+  if (autoSyncInterval) {
+    clearInterval(autoSyncInterval);
+    autoSyncInterval = null;
+    console.log('[iCloud] Auto-sync disabled');
+  }
+}
+
+/**
+ * Check if auto-sync is enabled
+ */
+export function isAutoSyncEnabled(): boolean {
+  return autoSyncInterval !== null;
 }

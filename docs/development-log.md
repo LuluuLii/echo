@@ -1,6 +1,6 @@
 # Echo Development Log
 
-> 最后更新: 2026-02-07
+> 最后更新: 2026-02-15
 
 ## 项目概述
 
@@ -86,12 +86,36 @@ echo/
 - [x] 无 API Key 时的 Mock 响应
 - [x] AI Agent Prompts (activation-generator, echo-companion, ocr-extractor)
 
-### 未完成功能
+#### 7. LLM Provider 架构 ✅
 
-#### 数据持久化 ❌
-- [ ] SQLite 本地存储 (目前数据仅在内存/Zustand)
-- [ ] 刷新页面数据丢失
-- [ ] Drizzle ORM 集成
+- [x] 可插拔 Provider 系统 (OpenAI, Anthropic, Gemini, Ollama, WebLLM)
+- [x] 自动 fallback 链
+- [x] Settings 页面配置
+- [x] 本地 WebLLM 支持 (浏览器端推理)
+
+#### 8. 素材翻译 ✅
+
+- [x] 素材英文翻译 (contentEn 字段)
+- [x] 中英双语显示
+- [x] 翻译 Provider 选择
+- [x] 重翻按钮 (Library / MaterialDetail)
+- [x] 批量翻译 (Translate All)
+
+#### 9. 文件导入 ✅ (基础版)
+
+- [x] 支持 .md, .txt, images 导入
+- [x] Markdown 按 ## / --- 分段
+- [x] 多文件批量导入
+- [x] 预览和单独添加
+
+#### 10. 数据持久化 ✅
+
+- [x] Loro CRDT + IndexedDB 持久化
+- [x] Embedding 向量本地存储
+- [x] Session Memory 持久化
+- [x] 每日激活卡持久化 (一天一张)
+
+### 未完成功能
 
 #### Mobile 端 ❌
 - [ ] 完整 UI 实现 (目前只有骨架)
@@ -103,8 +127,7 @@ echo/
 - [ ] 语音输入/输出
 - [ ] 每日推送通知
 - [ ] Insight 数据分析
-- [ ] 离线 AI 支持
-- [ ] 数据同步
+- [ ] iCloud 同步
 
 ## 技术栈
 
@@ -198,24 +221,25 @@ daaefb8 feat: Add two entry points for Echo session
 >
 > 同步架构见 [sync-architecture.md](./sync-architecture.md)
 
-### Phase 1: 数据持久化 + 召回检索 ⬅️ 当前优先
+### Phase 1: 数据持久化 + 召回检索 ✅ 已完成
 
-1. **Loro + IndexedDB 持久化** - 从一开始使用 Loro 数据格式
-2. **关键词搜索 UI** - Practice 页面添加搜索框
-3. **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
-4. **语义相似度搜索** - 基于 embedding 的智能召回
+1. ✅ **Loro + IndexedDB 持久化** - 从一开始使用 Loro 数据格式
+2. ✅ **关键词搜索 UI** - Practice 页面添加搜索框
+3. ✅ **本地 Embedding** - 集成 transformers.js，素材入库时生成向量
+4. ✅ **语义相似度搜索** - 基于 embedding 的智能召回
 
-### Phase 2: iCloud 同步
+### Phase 2: iCloud 同步 ⬅️ 当前优先
 
 1. **File System Access API** - Web 端访问 iCloud Drive
 2. **手动/定期同步** - IndexedDB → iCloud 单向推送
 3. **从 iCloud 恢复** - 新设备初始化
+4. **Settings UI** - 同步状态、手动同步按钮
 
 ### Phase 3: 智能推荐
 
 1. **自动聚类** - K-Means 聚类 + 标签生成
 2. **相似素材推荐** - 查看时显示相关内容
-3. **Activation Card 模板** - 离线模板兜底
+3. ✅ **Activation Card 模板** - 离线模板兜底
 
 ### Phase 4: Insights 可视化
 
@@ -229,6 +253,89 @@ daaefb8 feat: Add two entry points for Echo session
 2. **ONNX Runtime** - 端上 Embedding 模型
 3. **iCloud 原生访问** - 替代 File System Access API
 4. **TestFlight** - EAS Build 发布测试
+
+---
+
+## 导入功能设计
+
+> 目标: 让用户在 PC 端和 Mobile 端都能方便地记录和引入已有素材
+
+### 当前实现 (v1)
+
+**Web 端 AddMaterialModal**:
+- 手动输入文字
+- 图片上传 + OCR 提取文字
+- 文件导入 (.md, .txt, images)
+  - Markdown 按 `## ` 标题或 `---` 分隔符分段
+  - 批量导入多个文件
+  - 预览和单独添加
+
+### 后续优化计划
+
+#### 1. 快捷录入优化
+
+| 功能 | 平台 | 优先级 | 描述 |
+|------|------|--------|------|
+| **剪贴板快捷粘贴** | Web/Mobile | P0 | 检测剪贴板内容，一键添加为素材 |
+| **拖拽导入** | Web | P0 | 拖拽文件/文字到页面直接添加 |
+| **Share Extension** | Mobile | P1 | 从其他 App 分享内容到 Echo |
+| **快捷键** | Web | P1 | Cmd+V 智能粘贴, Cmd+N 新建素材 |
+
+#### 2. 来源整合
+
+| 功能 | 平台 | 优先级 | 描述 |
+|------|------|--------|------|
+| **Apple Notes 导出** | Web/Mobile | P1 | 指导用户导出 Notes 为 PDF/文本 |
+| **Notion 导入** | Web | P2 | Notion API 或导出 Markdown |
+| **微信收藏导入** | Mobile | P2 | 从微信导出或 OCR 截图 |
+| **书签/稍后读** | Web | P3 | 导入 Pocket/Instapaper 内容 |
+
+#### 3. 批量处理优化
+
+| 功能 | 描述 |
+|------|------|
+| **智能分段** | 长文本自动识别段落边界 |
+| **去重检测** | 导入前检测相似内容，避免重复 |
+| **批量翻译** | 导入时可选自动翻译 |
+| **标签建议** | 基于内容自动建议分类标签 |
+
+#### 4. Mobile 端专项
+
+| 功能 | 描述 |
+|------|------|
+| **相机扫描** | 拍照 → OCR → 素材 |
+| **语音录入** | 语音转文字 → 素材 |
+| **截图监听** | 检测新截图，提示添加 |
+| **Widget** | 主屏 Widget 快速添加 |
+
+#### 5. 导入格式扩展
+
+| 格式 | 处理方式 |
+|------|----------|
+| `.md` | ✅ 按标题/分隔符分段 |
+| `.txt` | ✅ 整体导入 |
+| `.pdf` | 解析文本 + 分页/分段 |
+| `.docx` | 提取纯文本 |
+| `.epub` | 提取章节内容 |
+| `.html` | 提取正文 (Readability) |
+| 图片 | ✅ OCR 提取文字 |
+
+### 实现路线
+
+**Phase 2.1** (随 iCloud 同步一起):
+- [ ] 拖拽导入 (Web)
+- [ ] 剪贴板快捷粘贴
+- [ ] 导入时去重检测
+
+**Phase 5** (Mobile 端):
+- [ ] Share Extension
+- [ ] 相机扫描
+- [ ] 语音录入
+
+**Future**:
+- [ ] Notion/Apple Notes 集成
+- [ ] PDF/DOCX 解析
+- [ ] 智能分段算法
 
 ## 设计决策记录
 
