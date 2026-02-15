@@ -384,7 +384,6 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-echo-text truncate">{note.name}</p>
-                      <p className="text-echo-hint text-xs line-clamp-2 mt-1">{note.snippet}</p>
                     </div>
                   </div>
                 </button>
