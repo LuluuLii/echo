@@ -344,11 +344,237 @@ Territory 更真实。
 
 ---
 
+## V1 技术实现方案
+
+### 实现范围
+
+V1 聚焦 **Territory 视图（Topographic）**：
+
+1. UMAP 投影层 - 把 384 维 embedding 降到 2D
+2. Contour 密度层 - 生成地形等高线效果
+3. Voronoi 领地层 - 显示聚类领地边界
+4. LLM 主题命名 - 用 LLM 给每个 cluster 生成名称
+5. 交互 - 点击领地展开素材列表，zoom in/out
+
+### 技术架构
+
+```
+Embeddings (384d)
+    ↓ umap-js
+2D Coordinates
+    ↓ d3-contour (contourDensity)
+Topographic Contours (等高线)
+    ↓ d3-delaunay
+Voronoi Regions (领地边界)
+    ↓ Canvas rendering
+Visual Output
+```
+
+**三层叠加：**
+
+```
+Layer 1: Contour Density Map (地形等高线) - 背景
+Layer 2: UMAP 2D Projection (点位分布)   - 中层
+Layer 3: Voronoi Tessellation (领地边界)  - 交互层
+```
+
+### 核心算法
+
+#### 1. UMAP 降维
+
+把高维 embedding 投影到 2D 平面，保留局部和全局结构。
+
+```typescript
+import { UMAP } from 'umap-js';
+
+const umap = new UMAP({
+  nComponents: 2,      // 输出 2D
+  nNeighbors: 15,      // 局部邻居数
+  minDist: 0.1,        // 点最小距离
+  spread: 1.0,         // 分布范围
+});
+
+const embedding2D = await umap.fitAsync(embeddings384d);
+```
+
+#### 2. Contour Density（等高线密度图）
+
+**原理：把离散的点变成连续的「地形」**
+
+Step 1: 核密度估计 (KDE)
+- 每个点是一个「热源」，向周围扩散能量
+- 多个点叠加形成连续的密度场
+
+Step 2: 等高线提取 (Marching Squares)
+- 找到所有「高度相同」的点，连成线
+
+```typescript
+import { contourDensity } from 'd3-contour';
+
+const density = contourDensity()
+  .x(d => d.x)
+  .y(d => d.y)
+  .size([width, height])
+  .cellSize(4)       // 网格精度
+  .bandwidth(20);    // 扩散半径
+
+const contours = density.contours(points);
+```
+
+**参数影响：**
+- `bandwidth`：扩散半径，越大地形越平滑，越小越尖锐
+- `cellSize`：网格精度，越小越精细
+- `thresholds`：等高线数量
+
+#### 3. Voronoi Tessellation（领地划分）
+
+**原理：空间归属划分 —— 离谁最近就属于谁的领地**
+
+给定聚类中心点，找到所有「到各中心距离相等」的边界线。
+
+```typescript
+import { Delaunay } from 'd3-delaunay';
+
+// 从聚类中心构建 Voronoi
+const delaunay = Delaunay.from(clusterCenters);
+const voronoi = delaunay.voronoi([0, 0, width, height]);
+
+// 获取每个领地的多边形
+for (let i = 0; i < clusterCenters.length; i++) {
+  const cell = voronoi.cellPolygon(i);
+  // 绘制领地边界
+}
+
+// 交互：找到鼠标位置对应的领地
+const clusterId = voronoi.find(mouseX, mouseY);
+```
+
+### 数据到视觉的映射
+
+#### 高度/密度的含义
+
+| 地形特征 | 数据含义 | 用户理解 |
+|----------|----------|----------|
+| **高峰** | 素材多 + 近期活跃 + 内容深入 | 「我的核心关注领域」 |
+| **丘陵** | 素材较多，但不够深入或不够近期 | 「我时常想到的话题」 |
+| **平原** | 偶尔触及 | 「我偶尔涉及的领域」 |
+| **低洼/暗区** | 很少或从未表达 | 「我的盲区」(Blind Spots) |
+
+#### 高度计算公式
+
+```typescript
+interface MaterialHeight {
+  base: 1;                    // 基础高度：存在即有值
+  recencyWeight: number;      // 时间权重：0.5~1.0，30天内递减
+  depthWeight: number;        // 深度权重：log(length) normalized
+}
+
+// 区域高度 = 该区域内所有素材的加权累积
+areaHeight = Σ(base × recencyWeight × depthWeight)
+```
+
+#### 等高线间距的含义
+
+- **间距密** = 思考陡峭上升的区域 = 快速深入的主题
+- **间距疏** = 平缓的思考坡度 = 慢慢积累的主题
+
+#### 素材层与精炼层
+
+```
+素材层（地形基础）
+════════════════
+你所有的原始表达 → 形成地形本身（等高线、密度）
+
+精炼层（山顶标记）
+════════════════
+被多次练习、精炼的表达 → 显示为山顶的「结晶」✨ 标记
+```
+
+### Zoom 层级设计
+
+| Zoom | 视觉元素 | 显示信息 | 交互 |
+|------|----------|----------|------|
+| **L1** 全局 | 领地色块 + 名称 | 主题名、大小感 | 点击进入 L2 |
+| **L2** 领地 | 等高线 + 边界 | 主题名、素材数、密度分布 | 点击进入 L3 |
+| **L3** 聚类 | 素材点 + 子标签 | 子聚类、点分布 | hover 预览、点击进入 L4 |
+| **L4** 素材 | 卡片/文本 | 素材内容、时间、标签 | 编辑、查看详情 |
+
+```typescript
+interface ZoomLevel {
+  level: 1 | 2 | 3 | 4;
+  minScale: number;
+  maxScale: number;
+  render: {
+    territories: boolean;      // 领地色块
+    territoryLabels: boolean;  // 领地名称
+    contours: boolean;         // 等高线
+    materialDots: boolean;     // 素材点
+    subClusters: boolean;      // 子聚类
+    materialPreviews: boolean; // 素材预览
+  };
+}
+
+const ZOOM_LEVELS: ZoomLevel[] = [
+  { level: 1, minScale: 0.1, maxScale: 0.5,
+    render: { territories: true, territoryLabels: true, contours: false,
+              materialDots: false, subClusters: false, materialPreviews: false }},
+  { level: 2, minScale: 0.5, maxScale: 1.5,
+    render: { territories: true, territoryLabels: true, contours: true,
+              materialDots: false, subClusters: false, materialPreviews: false }},
+  { level: 3, minScale: 1.5, maxScale: 4,
+    render: { territories: true, territoryLabels: true, contours: true,
+              materialDots: true, subClusters: true, materialPreviews: false }},
+  { level: 4, minScale: 4, maxScale: 10,
+    render: { territories: false, territoryLabels: false, contours: true,
+              materialDots: true, subClusters: true, materialPreviews: true }},
+];
+```
+
+### 子聚类生成（L3）
+
+当 zoom 到 L3 时，对单个领地内的素材再做一次聚类：
+
+```
+领地「工作」(12篇)
+       │
+       ▼ 二次聚类
+   ┌───┴───┐
+   │       │
+ 项目A    会议
+ (5篇)   (4篇)  + 零散(3篇)
+```
+
+### 依赖库
+
+```json
+{
+  "umap-js": "^1.4.x",
+  "d3-contour": "^4.0.x",
+  "d3-delaunay": "^6.0.x",
+  "d3-scale": "^4.x",
+  "d3-array": "^3.x"
+}
+```
+
+### 现有基础
+
+已实现：
+- `clustering.ts`: K-Means++ 聚类（需升级标签为 LLM 生成）
+- `embedding.ts`: 384 维向量生成 + IndexedDB 缓存
+
+---
+
 ## 下一步
 
 1. [ ] 确定视觉 DNA（颜色/动画/风格）
 2. [ ] 设计 Moodboard
-3. [ ] Topographic Territory 原型
+3. [ ] **V1: Topographic Territory 实现**
+   - [ ] 安装依赖 (umap-js, d3-contour, d3-delaunay)
+   - [ ] UMAP 投影模块
+   - [ ] Contour 渲染
+   - [ ] Voronoi 交互层
+   - [ ] LLM 主题命名
+   - [ ] Zoom 层级切换
 4. [ ] Constellation View 原型
 5. [ ] Timeline 交互原型
 6. [ ] 整合测试
