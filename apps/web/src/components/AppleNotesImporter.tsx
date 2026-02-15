@@ -94,9 +94,14 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
     }
   };
 
+  // Loading state for notes
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
   const loadNotes = async (folder: NoteFolder | null) => {
     setSelectedFolder(folder);
     setSelectedNoteIds(new Set());
+    setLoadingNotes(true);
+    setError(null);
 
     try {
       const url = folder
@@ -108,6 +113,7 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
 
       if (data.error) {
         setError(data.error);
+        setLoadingNotes(false);
         return;
       }
 
@@ -115,6 +121,8 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
       setStep('notes');
     } catch {
       setError('Failed to load notes');
+    } finally {
+      setLoadingNotes(false);
     }
   };
 
@@ -262,24 +270,32 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
       case 'folders':
         return (
           <div className="space-y-4">
-            <p className="text-echo-muted text-sm">Select a folder to import from:</p>
-
-            {/* All Notes option */}
-            <button
-              onClick={() => loadNotes(null)}
-              className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">📝</span>
-                <div>
-                  <p className="font-medium text-echo-text">All Notes</p>
-                  <p className="text-echo-hint text-xs">Browse all notes across folders</p>
-                </div>
+            {loadingNotes ? (
+              <div className="text-center py-8">
+                <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+                <p className="text-echo-text font-medium">Loading notes...</p>
+                <p className="text-echo-hint text-xs mt-2">This may take a moment for large folders</p>
               </div>
-            </button>
+            ) : (
+              <>
+                <p className="text-echo-muted text-sm">Select a folder to import from:</p>
 
-            {/* Folder list */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+                {/* All Notes option */}
+                <button
+                  onClick={() => loadNotes(null)}
+                  className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">📝</span>
+                    <div>
+                      <p className="font-medium text-echo-text">All Notes</p>
+                      <p className="text-echo-hint text-xs">Browse all notes across folders</p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Folder list */}
+                <div className="space-y-2 max-h-64 overflow-y-auto">
               {folders.map(folder => (
                 <div key={folder.id} className="flex items-center gap-2">
                   <button
@@ -307,8 +323,10 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
               ))}
             </div>
 
-            {folders.length === 0 && (
-              <p className="text-echo-hint text-center py-4">No folders found</p>
+                {folders.length === 0 && (
+                  <p className="text-echo-hint text-center py-4">No folders found</p>
+                )}
+              </>
             )}
           </div>
         );
