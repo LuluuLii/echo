@@ -117,25 +117,38 @@ app.get('/check', async (c) => {
 /**
  * GET /api/apple-notes/folders
  * List all folders in Apple Notes
+ * Uses BULK fetch (id of every folder, name of every folder) for speed
  */
 app.get('/folders', async (c) => {
   try {
-    // Use ASCII delimiters to avoid conflicts with folder names
+    // FAST: Bulk property access for folders
     const script = `
       tell application "Notes"
-        set output to ""
-        set folderCount to count of folders
-        repeat with i from 1 to folderCount
-          set f to folder i
-          set folderName to name of f
-          set noteCount to count of notes of f
-          set folderId to id of f
-          set output to output & folderId & (ASCII character 30) & folderName & (ASCII character 30) & noteCount
-          if i < folderCount then
-            set output to output & (ASCII character 31)
-          end if
+        set folderIds to id of every folder
+        set folderNames to name of every folder
+
+        -- Build ID list
+        set idList to ""
+        repeat with i from 1 to count of folderIds
+          if i > 1 then set idList to idList & (ASCII character 30)
+          set idList to idList & (item i of folderIds)
         end repeat
-        return output
+
+        -- Build name list
+        set nameList to ""
+        repeat with i from 1 to count of folderNames
+          if i > 1 then set nameList to nameList & (ASCII character 30)
+          set nameList to nameList & (item i of folderNames)
+        end repeat
+
+        -- Build count list (must loop for this)
+        set countList to ""
+        repeat with i from 1 to count of folderIds
+          if i > 1 then set countList to countList & (ASCII character 30)
+          set countList to countList & (count of notes of folder i)
+        end repeat
+
+        return idList & (ASCII character 31) & nameList & (ASCII character 31) & countList
       end tell
     `;
 
@@ -145,15 +158,18 @@ app.get('/folders', async (c) => {
       return c.json({ folders: [] });
     }
 
-    // ASCII 31 = unit separator between items, ASCII 30 = record separator within item
-    const folders: NoteFolder[] = result.split(String.fromCharCode(31)).map(item => {
-      const parts = item.split(String.fromCharCode(30));
-      return {
-        id: (parts[0] || '').replace(/^"|"$/g, ''),  // Remove extra quotes
-        name: parts[1] || 'Unknown',
-        noteCount: parseInt(parts[2]) || 0,
-      };
-    }).filter(f => f.id && f.name !== 'Recently Deleted');
+    const US = String.fromCharCode(31);
+    const RS = String.fromCharCode(30);
+    const parts = result.split(US);
+    const ids = (parts[0] || '').split(RS).filter(Boolean);
+    const names = (parts[1] || '').split(RS).filter(Boolean);
+    const counts = (parts[2] || '').split(RS).filter(Boolean);
+
+    const folders: NoteFolder[] = ids.map((id, i) => ({
+      id: id.replace(/^"|"$/g, ''),
+      name: names[i] || 'Unknown',
+      noteCount: parseInt(counts[i]) || 0,
+    })).filter(f => f.id && f.name !== 'Recently Deleted');
 
     return c.json({ folders });
   } catch (error) {
@@ -237,6 +253,7 @@ app.get('/notes', async (c) => {
 /**
  * POST /api/apple-notes/import
  * Import selected notes by their IDs
+ * Uses batch processing to reduce AppleScript call overhead
  */
 app.post('/import', async (c) => {
   const body = await c.req.json();
@@ -248,38 +265,67 @@ app.post('/import', async (c) => {
 
   try {
     const importedNotes: NoteContent[] = [];
-    const RS = String.fromCharCode(30);  // Record separator
+    const RS = String.fromCharCode(30);  // Record separator (within note)
+    const US = String.fromCharCode(31);  // Unit separator (between notes)
+    const BATCH_SIZE = 5;  // Process 5 notes per AppleScript call
 
-    for (const noteId of noteIds) {
+    // Process notes in batches
+    for (let i = 0; i < noteIds.length; i += BATCH_SIZE) {
+      const batchIds = noteIds.slice(i, i + BATCH_SIZE);
+
+      // Build AppleScript that fetches multiple notes at once
+      const idListScript = batchIds.map(id => `"${id}"`).join(', ');
+
       const script = `
         tell application "Notes"
-          set n to first note whose id is "${noteId}"
-          set noteName to name of n
-          set noteBody to plaintext of n
-          set noteHtml to body of n
-          try
-            set noteFolder to name of container of n
-          on error
-            set noteFolder to "Notes"
-          end try
-          set noteCreated to creation date of n as text
-          set noteModified to modification date of n as text
-          return noteName & (ASCII character 30) & noteBody & (ASCII character 30) & noteHtml & (ASCII character 30) & noteFolder & (ASCII character 30) & noteCreated & (ASCII character 30) & noteModified
+          set noteIdList to {${idListScript}}
+          set output to ""
+          set noteIndex to 0
+
+          repeat with noteId in noteIdList
+            set noteIndex to noteIndex + 1
+            set n to first note whose id is noteId
+
+            set noteName to name of n
+            set noteBody to plaintext of n
+            set noteHtml to body of n
+            try
+              set noteFolder to name of container of n
+            on error
+              set noteFolder to "Notes"
+            end try
+            set noteCreated to creation date of n as text
+            set noteModified to modification date of n as text
+
+            set noteData to noteId & (ASCII character 30) & noteName & (ASCII character 30) & noteBody & (ASCII character 30) & noteHtml & (ASCII character 30) & noteFolder & (ASCII character 30) & noteCreated & (ASCII character 30) & noteModified
+
+            if noteIndex > 1 then
+              set output to output & (ASCII character 31)
+            end if
+            set output to output & noteData
+          end repeat
+
+          return output
         end tell
       `;
 
       const result = await runAppleScript(script);
-      const parts = result.split(RS);
+      const notesData = result.split(US);
 
-      importedNotes.push({
-        id: noteId,
-        name: parts[0] || 'Untitled',
-        body: parts[1] || '',
-        htmlBody: parts[2] || '',
-        folder: parts[3] || '',
-        createdAt: parts[4] || '',
-        modifiedAt: parts[5] || '',
-      });
+      for (const noteData of notesData) {
+        const parts = noteData.split(RS);
+        if (parts.length >= 7) {
+          importedNotes.push({
+            id: (parts[0] || '').replace(/^"|"$/g, ''),
+            name: parts[1] || 'Untitled',
+            body: parts[2] || '',
+            htmlBody: parts[3] || '',
+            folder: parts[4] || '',
+            createdAt: parts[5] || '',
+            modifiedAt: parts[6] || '',
+          });
+        }
+      }
     }
 
     return c.json({ notes: importedNotes });
@@ -291,6 +337,7 @@ app.post('/import', async (c) => {
 /**
  * POST /api/apple-notes/import-folder
  * Import all notes from a folder
+ * Uses batch processing for better performance
  */
 app.post('/import-folder', async (c) => {
   const body = await c.req.json();
@@ -304,21 +351,17 @@ app.post('/import-folder', async (c) => {
     const RS = String.fromCharCode(30);  // Record separator
     const US = String.fromCharCode(31);  // Unit separator
 
-    // First get all note IDs in the folder
+    // First get all note IDs in the folder using bulk fetch
     const listScript = `
       tell application "Notes"
-        set output to ""
         set targetFolder to first folder whose id is "${folderId}"
-        set noteItems to notes of targetFolder
-        set noteCount to count of noteItems
-        repeat with i from 1 to noteCount
-          set n to item i of noteItems
-          set output to output & (id of n)
-          if i < noteCount then
-            set output to output & (ASCII character 31)
-          end if
+        set noteIds to id of every note of targetFolder
+        set idList to ""
+        repeat with i from 1 to count of noteIds
+          if i > 1 then set idList to idList & (ASCII character 31)
+          set idList to idList & (item i of noteIds)
         end repeat
-        return output
+        return idList
       end tell
     `;
 
@@ -328,41 +371,65 @@ app.post('/import-folder', async (c) => {
       return c.json({ notes: [] });
     }
 
-    const noteIds = idsResult.split(US).filter(id => id.trim());
-
-    // Import each note
+    const noteIds = idsResult.split(US).filter(id => id.trim()).map(id => id.replace(/^"|"$/g, ''));
     const importedNotes: NoteContent[] = [];
+    const BATCH_SIZE = 5;
 
-    for (const noteId of noteIds) {
+    // Process notes in batches
+    for (let i = 0; i < noteIds.length; i += BATCH_SIZE) {
+      const batchIds = noteIds.slice(i, i + BATCH_SIZE);
+      const idListScript = batchIds.map(id => `"${id}"`).join(', ');
+
       const script = `
         tell application "Notes"
-          set n to first note whose id is "${noteId}"
-          set noteName to name of n
-          set noteBody to plaintext of n
-          set noteHtml to body of n
-          try
-            set noteFolder to name of container of n
-          on error
-            set noteFolder to "Notes"
-          end try
-          set noteCreated to creation date of n as text
-          set noteModified to modification date of n as text
-          return noteName & (ASCII character 30) & noteBody & (ASCII character 30) & noteHtml & (ASCII character 30) & noteFolder & (ASCII character 30) & noteCreated & (ASCII character 30) & noteModified
+          set noteIdList to {${idListScript}}
+          set output to ""
+          set noteIndex to 0
+
+          repeat with noteId in noteIdList
+            set noteIndex to noteIndex + 1
+            set n to first note whose id is noteId
+
+            set noteName to name of n
+            set noteBody to plaintext of n
+            set noteHtml to body of n
+            try
+              set noteFolder to name of container of n
+            on error
+              set noteFolder to "Notes"
+            end try
+            set noteCreated to creation date of n as text
+            set noteModified to modification date of n as text
+
+            set noteData to noteId & (ASCII character 30) & noteName & (ASCII character 30) & noteBody & (ASCII character 30) & noteHtml & (ASCII character 30) & noteFolder & (ASCII character 30) & noteCreated & (ASCII character 30) & noteModified
+
+            if noteIndex > 1 then
+              set output to output & (ASCII character 31)
+            end if
+            set output to output & noteData
+          end repeat
+
+          return output
         end tell
       `;
 
       const result = await runAppleScript(script);
-      const parts = result.split(RS);
+      const notesData = result.split(US);
 
-      importedNotes.push({
-        id: noteId,
-        name: parts[0] || 'Untitled',
-        body: parts[1] || '',
-        htmlBody: parts[2] || '',
-        folder: parts[3] || '',
-        createdAt: parts[4] || '',
-        modifiedAt: parts[5] || '',
-      });
+      for (const noteData of notesData) {
+        const parts = noteData.split(RS);
+        if (parts.length >= 7) {
+          importedNotes.push({
+            id: (parts[0] || '').replace(/^"|"$/g, ''),
+            name: parts[1] || 'Untitled',
+            body: parts[2] || '',
+            htmlBody: parts[3] || '',
+            folder: parts[4] || '',
+            createdAt: parts[5] || '',
+            modifiedAt: parts[6] || '',
+          });
+        }
+      }
     }
 
     return c.json({ notes: importedNotes });
