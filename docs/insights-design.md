@@ -564,21 +564,54 @@ const ZOOM_LEVELS: ZoomLevel[] = [
 
 ---
 
+## 实现进度
+
+### V1: Territory 基础版 ✅
+
+- [x] 安装依赖 (umap-js, d3-contour, d3-delaunay, d3-scale)
+- [x] Supervised UMAP 投影（保持同 cluster 点聚集）
+- [x] Canvas 渲染（软渐变区域 + 等高线）
+- [x] LLM 主题标签生成 + 缓存
+- [x] Zoom LOD（子聚类标签 + 素材预览）
+- [x] 交互（pan/zoom/click）
+
+### V2: Memory 层整合（待开发）
+
+结合 Session Memory 和 Artifacts 丰富 Territory：
+
+1. **Artifacts 展示**
+   - 在 Territory 上显示精炼表达（山顶结晶 ✨）
+   - Artifact 关联的 materials 形成视觉连接
+   - 点击 Artifact 查看完整内容
+
+2. **Session Memory 整合**
+   - 显示已练习的主题区域（高亮/标记）
+   - 练习频率影响区域「活跃度」视觉
+   - 可查看某区域的练习历史
+
+3. **时间维度**
+   - Timeline 滑块展示 Territory 演变
+   - 不同时期的表达密度变化
+   - 思维成长可视化
+
+4. **Blind Spots 增强**
+   - 基于 Session Memory 识别「遇到但未深入」的话题
+   - 推荐探索方向
+
+### V3: 其他视角（未来）
+
+- [ ] Constellation View（关系视角）
+- [ ] Timeline View（时间视角）
+- [ ] 年度回顾模式
+
+---
+
 ## 下一步
 
-1. [ ] 确定视觉 DNA（颜色/动画/风格）
-2. [ ] 设计 Moodboard
-3. [ ] **V1: Topographic Territory 实现**
-   - [ ] 安装依赖 (umap-js, d3-contour, d3-delaunay)
-   - [ ] UMAP 投影模块
-   - [ ] Contour 渲染
-   - [ ] Voronoi 交互层
-   - [ ] LLM 主题命名
-   - [ ] Zoom 层级切换
-4. [ ] Constellation View 原型
-5. [ ] Timeline 交互原型
-6. [ ] 整合测试
-7. [ ] 正式实现
+1. [ ] V1 测试和优化（性能、视觉微调）
+2. [ ] V2: Artifacts 在 Territory 上的展示
+3. [ ] V2: Session Memory 整合
+4. [ ] 确定视觉 DNA（颜色/动画/风格）
 
 ---
 
