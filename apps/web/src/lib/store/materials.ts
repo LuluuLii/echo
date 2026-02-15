@@ -101,9 +101,10 @@ interface MaterialsStore {
   getSessionMemory: (id: string) => SessionMemory | undefined;
   deleteSessionMemory: (id: string) => void;
 
-  // Card operations (not persisted)
+  // Card operations (persisted to localStorage for daily card)
   setCurrentCard: (card: ActivationCard) => void;
   clearCurrentCard: () => void;
+  loadDailyCard: () => ActivationCard | null;
 }
 
 /**
@@ -149,6 +150,57 @@ function toSessionMemory(m: LoroSessionMemory): SessionMemory {
     createdAt: m.createdAt,
     exitedAt: m.exitedAt,
   };
+}
+
+// Daily card persistence
+const DAILY_CARD_KEY = 'echo-daily-card';
+
+/**
+ * Check if a timestamp is from today (same calendar day)
+ */
+function isToday(timestamp: number): boolean {
+  const cardDate = new Date(timestamp);
+  const today = new Date();
+  return (
+    cardDate.getFullYear() === today.getFullYear() &&
+    cardDate.getMonth() === today.getMonth() &&
+    cardDate.getDate() === today.getDate()
+  );
+}
+
+/**
+ * Save daily card to localStorage
+ */
+function saveDailyCard(card: ActivationCard): void {
+  try {
+    localStorage.setItem(DAILY_CARD_KEY, JSON.stringify(card));
+  } catch (e) {
+    console.warn('Failed to save daily card:', e);
+  }
+}
+
+/**
+ * Load daily card from localStorage (only if from today)
+ */
+function loadDailyCardFromStorage(): ActivationCard | null {
+  try {
+    const stored = localStorage.getItem(DAILY_CARD_KEY);
+    if (!stored) return null;
+
+    const card = JSON.parse(stored) as ActivationCard;
+
+    // Only return if the card is from today
+    if (isToday(card.createdAt)) {
+      return card;
+    }
+
+    // Card is stale (from a previous day), clear it
+    localStorage.removeItem(DAILY_CARD_KEY);
+    return null;
+  } catch (e) {
+    console.warn('Failed to load daily card:', e);
+    return null;
+  }
 }
 
 export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
@@ -386,10 +438,21 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
   },
 
   setCurrentCard: (card) => {
+    saveDailyCard(card);
     set({ currentCard: card });
   },
 
   clearCurrentCard: () => {
+    // Note: Don't clear localStorage here - only clear Zustand state
+    // The "New card" button should generate a new card which will overwrite storage
     set({ currentCard: null });
+  },
+
+  loadDailyCard: () => {
+    const card = loadDailyCardFromStorage();
+    if (card) {
+      set({ currentCard: card });
+    }
+    return card;
   },
 }));

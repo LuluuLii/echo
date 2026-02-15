@@ -14,6 +14,8 @@ const DEFAULT_CONFIG: LLMConfig = {
   // Fallback chain: template is always last as ultimate fallback
   fallbackChain: ['webllm', 'ollama', 'openai', 'anthropic', 'gemini', 'template'],
   autoFallback: true,
+  // Translation provider: 'active' means use the active provider
+  translationProvider: 'active',
 };
 
 /**

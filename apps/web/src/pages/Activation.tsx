@@ -6,27 +6,29 @@ import { AddMaterialModal } from '../components/AddMaterialModal';
 
 export function Activation() {
   const navigate = useNavigate();
-  const { currentCard, materials, setCurrentCard, clearCurrentCard, addMaterial, setMaterialTranslation } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, loadDailyCard, addMaterial, setMaterialTranslation } = useMaterialsStore();
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedCard, setGeneratedCard] = useState<ActivationCard | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Ref to prevent duplicate generation (React StrictMode renders twice)
   const generationStartedRef = useRef(false);
 
-  // Clear stale card on mount
-  useEffect(() => {
-    clearCurrentCard();
-  }, [clearCurrentCard]);
-
-  // Auto-generate card on mount (with StrictMode protection)
+  // Load daily card or generate new one on mount
   useEffect(() => {
     // Skip if generation already started or in progress
-    if (generationStartedRef.current || isGenerating || generatedCard) {
+    if (generationStartedRef.current || isGenerating) {
       return;
     }
 
+    // First, try to load today's card from storage
+    const existingCard = loadDailyCard();
+    if (existingCard) {
+      // Already have today's card, no need to generate
+      return;
+    }
+
+    // No materials, nothing to generate
     if (materials.length === 0) {
       return;
     }
@@ -50,7 +52,6 @@ export function Activation() {
       setMaterialTranslation
     )
       .then((card) => {
-        setGeneratedCard(card);
         setCurrentCard(card);
       })
       .catch((error) => {
@@ -63,8 +64,8 @@ export function Activation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Use current card, generated card, or show loading/empty state
-  const card = currentCard || generatedCard;
+  // Use current card from store (persisted daily card)
+  const card = currentCard;
 
   // Get source materials for this card
   const sourceMaterials = card
@@ -86,7 +87,6 @@ export function Activation() {
     if (materials.length === 0) return;
 
     setIsGenerating(true);
-    setGeneratedCard(null);
 
     // Select random 2-4 materials
     const shuffled = [...materials].sort(() => Math.random() - 0.5);
@@ -104,7 +104,7 @@ export function Activation() {
         undefined,
         setMaterialTranslation
       );
-      setGeneratedCard(newCard);
+      // This will persist the new card as today's card
       setCurrentCard(newCard);
     } catch (error) {
       console.error('Failed to regenerate card:', error);

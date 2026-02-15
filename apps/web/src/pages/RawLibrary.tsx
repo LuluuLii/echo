@@ -77,6 +77,27 @@ export function RawLibrary() {
     }
   };
 
+  // Re-translate a material (force new translation)
+  const handleRetranslate = async (material: RawMaterial) => {
+    if (translatingIds.has(material.id)) return;
+
+    setTranslatingIds((prev) => new Set(prev).add(material.id));
+    try {
+      const result = await translateToEnglish(material.content, { force: true });
+      if (result.success && result.translation) {
+        setMaterialTranslation(material.id, result.translation);
+      }
+    } catch (error) {
+      console.error('Re-translation failed:', error);
+    } finally {
+      setTranslatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(material.id);
+        return next;
+      });
+    }
+  };
+
   // Translate all materials without translations
   const handleTranslateAll = async () => {
     const needsTranslation = materials.filter((m) => !m.contentEn);
@@ -231,7 +252,19 @@ export function RawLibrary() {
                   </p>
                   {/* Translation status */}
                   {material.contentEn ? (
-                    <span className="text-xs text-green-600">EN</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-green-600">EN</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRetranslate(material);
+                        }}
+                        disabled={translatingIds.has(material.id)}
+                        className="text-xs text-blue-500 hover:text-blue-600 disabled:text-gray-400"
+                      >
+                        {translatingIds.has(material.id) ? '...' : '↻'}
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={(e) => {

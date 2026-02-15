@@ -105,6 +105,9 @@ export interface LLMConfig {
 
   // Enable automatic fallback
   autoFallback: boolean;
+
+  // Translation provider: 'active' means use the active provider, otherwise a specific provider ID
+  translationProvider: 'active' | string;
 }
 
 // ===== Service Types =====

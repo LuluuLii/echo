@@ -14,12 +14,19 @@ export interface TranslationResult {
   skipped?: boolean; // True if text was already English
 }
 
+export interface TranslationOptions {
+  force?: boolean; // Force translation even if content appears to be English
+}
+
 /**
  * Translate content to English
  */
-export async function translateToEnglish(content: string): Promise<TranslationResult> {
-  // Skip if already English
-  if (isLikelyEnglish(content)) {
+export async function translateToEnglish(
+  content: string,
+  options?: TranslationOptions
+): Promise<TranslationResult> {
+  // Skip if already English (unless force is true)
+  if (!options?.force && isLikelyEnglish(content)) {
     return {
       success: true,
       translation: content,
@@ -32,10 +39,22 @@ export async function translateToEnglish(content: string): Promise<TranslationRe
   // Wait for service to initialize
   await llmService.waitForInit();
 
-  const activeProvider = llmService.getActiveProvider();
+  const config = llmService.getConfig();
+
+  // Determine which provider to use for translation
+  let provider;
+  if (config.translationProvider === 'active') {
+    provider = llmService.getActiveProvider();
+  } else {
+    provider = llmService.getProvider(config.translationProvider);
+    // If specified provider is not ready, fall back to active
+    if (!provider || !provider.isReady()) {
+      provider = llmService.getActiveProvider();
+    }
+  }
 
   // Check if we have a working provider
-  if (!activeProvider || !activeProvider.isReady()) {
+  if (!provider || !provider.isReady()) {
     return {
       success: false,
       error: 'No LLM provider available. Please configure one in Settings.',
@@ -44,7 +63,7 @@ export async function translateToEnglish(content: string): Promise<TranslationRe
 
   try {
     const messages = buildTranslationPrompt(content);
-    const translation = await llmService.chat(messages);
+    const translation = await provider.chat(messages);
 
     return {
       success: true,
@@ -64,13 +83,14 @@ export async function translateToEnglish(content: string): Promise<TranslationRe
  */
 export async function translateBatch(
   contents: string[],
-  onProgress?: (completed: number, total: number) => void
+  onProgress?: (completed: number, total: number) => void,
+  options?: TranslationOptions
 ): Promise<Map<string, TranslationResult>> {
   const results = new Map<string, TranslationResult>();
 
   for (let i = 0; i < contents.length; i++) {
     const content = contents[i];
-    const result = await translateToEnglish(content);
+    const result = await translateToEnglish(content, options);
     results.set(content, result);
     onProgress?.(i + 1, contents.length);
   }

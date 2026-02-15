@@ -31,10 +31,10 @@ export function MaterialDetailModal({
   const [isTranslating, setIsTranslating] = useState(false);
 
   // Handle translation
-  const handleTranslate = async () => {
+  const handleTranslate = async (force = false) => {
     setIsTranslating(true);
     try {
-      const result = await translateToEnglish(material.content);
+      const result = await translateToEnglish(material.content, { force });
       if (result.success && result.translation) {
         setMaterialTranslation(material.id, result.translation);
       }
@@ -152,16 +152,25 @@ export function MaterialDetailModal({
               {/* English translation */}
               {material.contentEn && material.contentEn !== material.content ? (
                 <div className="bg-blue-50 rounded-xl p-4">
-                  <p className="text-echo-hint text-xs uppercase tracking-wide mb-2">
-                    English Translation
-                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-echo-hint text-xs uppercase tracking-wide">
+                      English Translation
+                    </p>
+                    <button
+                      onClick={() => handleTranslate(true)}
+                      disabled={isTranslating}
+                      className="text-xs text-blue-500 hover:text-blue-600 disabled:text-gray-400"
+                    >
+                      {isTranslating ? 'Translating...' : 'Re-translate'}
+                    </button>
+                  </div>
                   <p className="text-blue-700 leading-relaxed whitespace-pre-wrap">
                     {material.contentEn}
                   </p>
                 </div>
               ) : (
                 <button
-                  onClick={handleTranslate}
+                  onClick={() => handleTranslate(false)}
                   disabled={isTranslating}
                   className="w-full py-3 border-2 border-dashed border-blue-200 text-blue-500 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-colors disabled:opacity-50"
                 >

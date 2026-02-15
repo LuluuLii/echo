@@ -40,6 +40,9 @@ export function Settings() {
   const [activeType, setActiveType] = useState<ActiveProviderType>('template');
   const [autoFallback, setAutoFallback] = useState(true);
 
+  // Translation provider setting
+  const [translationProvider, setTranslationProvider] = useState<'active' | string>('active');
+
   // Initialize
   useEffect(() => {
     async function init() {
@@ -48,6 +51,7 @@ export function Settings() {
       setConfig(cfg);
       setStatuses(service.getAllStatuses());
       setAutoFallback(cfg.autoFallback);
+      setTranslationProvider(cfg.translationProvider || 'active');
 
       // Determine active type
       const active = cfg.activeProvider;
@@ -198,7 +202,13 @@ export function Settings() {
     }
 
     await service.setActiveProvider(providerId);
-    service.updateConfig({ autoFallback });
+    service.updateConfig({ autoFallback, translationProvider });
+    setConfig(service.getConfig());
+  };
+
+  const handleSaveTranslationProvider = () => {
+    const service = getLLMService();
+    service.updateConfig({ translationProvider });
     setConfig(service.getConfig());
   };
 
@@ -549,6 +559,49 @@ export function Settings() {
         <p className="text-echo-hint text-xs mt-3">
           Runs entirely in your browser using WebGPU. Requires a modern browser with WebGPU support.
         </p>
+      </section>
+
+      {/* Translation Settings */}
+      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium text-echo-text">Translation</h2>
+          <button
+            onClick={handleSaveTranslationProvider}
+            className="px-4 py-2 bg-echo-text text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
+          >
+            Save
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm text-echo-muted mb-2">
+            Translation Provider
+          </label>
+          <select
+            value={translationProvider}
+            onChange={(e) => setTranslationProvider(e.target.value)}
+            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
+          >
+            <option value="active">Use Active Provider</option>
+            <optgroup label="Cloud Providers">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Google Gemini</option>
+            </optgroup>
+            <optgroup label="Local">
+              <option value="ollama">Ollama</option>
+              <option value="webllm">On-Device (WebLLM)</option>
+            </optgroup>
+          </select>
+          <p className="text-echo-hint text-xs mt-2">
+            Choose which provider to use for translating materials to English.
+            {translationProvider !== 'active' && (
+              <span className="text-amber-600">
+                {' '}Make sure this provider is configured and ready.
+              </span>
+            )}
+          </p>
+        </div>
       </section>
 
       {/* Info */}

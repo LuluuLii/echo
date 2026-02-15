@@ -132,21 +132,21 @@ export function Session() {
     }
   }, []);
 
-  // Create session memory when entering chat phase
-  useEffect(() => {
-    if (phase === 'chat' && !sessionMemoryIdRef.current && !sessionSavedRef.current) {
-      const memory = saveSessionMemory({
-        sessionId: sessionIdRef.current,
-        topic: topic || card.emotionalAnchor || undefined,
-        turnCount: 0,
-        summary: '(in progress)',
-        status: 'abandoned',
-        materialIds: sourceMaterials.map((m) => m.id),
-        createdAt: sessionCreatedAtRef.current,
-      });
-      sessionMemoryIdRef.current = memory.id;
-    }
-  }, [phase, topic, card.emotionalAnchor, sourceMaterials, saveSessionMemory]);
+  // Helper to create session memory (called on first user message)
+  const createSessionMemoryIfNeeded = useCallback(() => {
+    if (sessionMemoryIdRef.current || sessionSavedRef.current) return;
+
+    const memory = saveSessionMemory({
+      sessionId: sessionIdRef.current,
+      topic: topic || card.emotionalAnchor || undefined,
+      turnCount: 1, // Will be the first message
+      summary: '(in progress)',
+      status: 'abandoned',
+      materialIds: sourceMaterials.map((m) => m.id),
+      createdAt: sessionCreatedAtRef.current,
+    });
+    sessionMemoryIdRef.current = memory.id;
+  }, [topic, card.emotionalAnchor, sourceMaterials, saveSessionMemory]);
 
   // Auto-save on page leave
   useEffect(() => {
@@ -346,6 +346,12 @@ export function Session() {
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
+
+    // Create session memory on first user message
+    const isFirstMessage = messages.filter((m) => m.role === 'user').length === 0;
+    if (isFirstMessage) {
+      createSessionMemoryIfNeeded();
+    }
 
     const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: inputText.trim() };
     setMessages((prev) => [...prev, userMessage]);
