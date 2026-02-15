@@ -94,20 +94,21 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
     }
   };
 
-  // Loading state for notes
+  // Loading state and pagination
   const [loadingNotes, setLoadingNotes] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalNotes, setTotalNotes] = useState(0);
 
-  const loadNotes = async (folder: NoteFolder | null) => {
+  const loadNotes = async (folder: NoteFolder) => {
     setSelectedFolder(folder);
     setSelectedNoteIds(new Set());
     setLoadingNotes(true);
     setError(null);
+    setNotes([]);
 
     try {
-      const url = folder
-        ? `${API_BASE}/notes?folder=${encodeURIComponent(folder.id)}`
-        : `${API_BASE}/notes`;
-
+      const url = `${API_BASE}/notes?folder=${encodeURIComponent(folder.id)}&offset=0&limit=20`;
       const res = await fetch(url);
       const data = await res.json();
 
@@ -118,11 +119,36 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
       }
 
       setNotes(data.notes || []);
+      setHasMore(data.hasMore || false);
+      setTotalNotes(data.total || 0);
       setStep('notes');
     } catch {
       setError('Failed to load notes');
     } finally {
       setLoadingNotes(false);
+    }
+  };
+
+  const loadMoreNotes = async () => {
+    if (!selectedFolder || loadingMore || !hasMore) return;
+
+    setLoadingMore(true);
+    try {
+      const url = `${API_BASE}/notes?folder=${encodeURIComponent(selectedFolder.id)}&offset=${notes.length}&limit=20`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+
+      setNotes(prev => [...prev, ...(data.notes || [])]);
+      setHasMore(data.hasMore || false);
+    } catch {
+      setError('Failed to load more notes');
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -278,50 +304,26 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
               </div>
             ) : (
               <>
-                <p className="text-echo-muted text-sm">Select a folder to import from:</p>
-
-                {/* All Notes option */}
-                <button
-                  onClick={() => loadNotes(null)}
-                  className="w-full p-4 border border-gray-200 rounded-xl text-left hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">📝</span>
-                    <div>
-                      <p className="font-medium text-echo-text">All Notes</p>
-                      <p className="text-echo-hint text-xs">Browse all notes across folders</p>
-                    </div>
-                  </div>
-                </button>
+                <p className="text-echo-muted text-sm">Select a folder to browse notes:</p>
 
                 {/* Folder list */}
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-              {folders.map(folder => (
-                <div key={folder.id} className="flex items-center gap-2">
-                  <button
-                    onClick={() => loadNotes(folder)}
-                    className="flex-1 p-3 border border-gray-200 rounded-lg text-left hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span>📁</span>
-                        <span className="text-echo-text">{folder.name}</span>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {folders.map(folder => (
+                    <button
+                      key={folder.id}
+                      onClick={() => loadNotes(folder)}
+                      className="w-full p-3 border border-gray-200 rounded-lg text-left hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>📁</span>
+                          <span className="text-echo-text">{folder.name}</span>
+                        </div>
+                        <span className="text-echo-hint text-sm">{folder.noteCount} notes</span>
                       </div>
-                      <span className="text-echo-hint text-sm">{folder.noteCount} notes</span>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedFolder(folder);
-                      importFolder();
-                    }}
-                    className="px-3 py-3 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap"
-                  >
-                    Import All
-                  </button>
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
 
                 {folders.length === 0 && (
                   <p className="text-echo-hint text-center py-4">No folders found</p>
@@ -346,13 +348,13 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
                 Back
               </button>
               <p className="text-echo-muted text-sm">
-                {selectedFolder ? selectedFolder.name : 'All Notes'}
+                {selectedFolder?.name} ({notes.length}/{totalNotes})
               </p>
               <button
                 onClick={selectAllNotes}
                 className="text-blue-500 text-sm hover:text-blue-600"
               >
-                {selectedNoteIds.size === notes.length ? 'Deselect All' : 'Select All'}
+                {selectedNoteIds.size === notes.length && notes.length > 0 ? 'Deselect All' : 'Select All'}
               </button>
             </div>
 
@@ -387,9 +389,20 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
                   </div>
                 </button>
               ))}
+
+              {/* Load More button */}
+              {hasMore && (
+                <button
+                  onClick={loadMoreNotes}
+                  disabled={loadingMore}
+                  className="w-full py-2 text-sm text-blue-500 hover:text-blue-600 disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading...' : `Load More (${totalNotes - notes.length} remaining)`}
+                </button>
+              )}
             </div>
 
-            {notes.length === 0 && (
+            {notes.length === 0 && !loadingNotes && (
               <p className="text-echo-hint text-center py-4">No notes in this folder</p>
             )}
 

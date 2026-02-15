@@ -162,97 +162,78 @@ app.get('/folders', async (c) => {
 });
 
 /**
- * GET /api/apple-notes/notes?folder=<folderId>
- * List notes in a folder (or all notes if no folder specified)
+ * GET /api/apple-notes/notes?folder=<folderId>&offset=0&limit=20
+ * List notes in a folder with pagination
+ * folder is REQUIRED to avoid slow "all notes" queries
  */
 app.get('/notes', async (c) => {
   const folderId = c.req.query('folder');
+  const offset = parseInt(c.req.query('offset') || '0', 10);
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 50);
+
+  if (!folderId) {
+    return c.json({ error: 'folder parameter is required' }, 400);
+  }
 
   try {
-    // Use ASCII delimiters and limit to first 100 notes for performance
-    const RS = '(ASCII character 30)';  // Record separator
-    const US = '(ASCII character 31)';  // Unit separator
+    const RS = '(ASCII character 30)';
+    const US = '(ASCII character 31)';
 
-    let script: string;
+    // First get total count (fast)
+    const countScript = `
+      tell application "Notes"
+        set targetFolder to first folder whose id is "${folderId}"
+        return count of notes of targetFolder
+      end tell
+    `;
+    const totalStr = await runAppleScript(countScript);
+    const total = parseInt(totalStr, 10) || 0;
 
-    if (folderId) {
-      script = `
-        tell application "Notes"
-          set output to ""
-          set targetFolder to first folder whose id is "${folderId}"
-          set folderName to name of targetFolder
-          set noteItems to notes of targetFolder
-          set noteCount to count of noteItems
-          if noteCount > 50 then set noteCount to 50
-          repeat with i from 1 to noteCount
-            set n to item i of noteItems
-            set noteName to name of n
-            set noteId to id of n
-            set noteCreated to creation date of n as text
-            set noteModified to modification date of n as text
-            set noteBody to plaintext of n
-            if length of noteBody > 100 then
-              set noteSnippet to text 1 thru 100 of noteBody
-            else
-              set noteSnippet to noteBody
-            end if
-            set output to output & noteId & ${RS} & noteName & ${RS} & folderName & ${RS} & noteCreated & ${RS} & noteModified & ${RS} & noteSnippet
-            if i < noteCount then
-              set output to output & ${US}
-            end if
-          end repeat
-          return output
-        end tell
-      `;
-    } else {
-      script = `
-        tell application "Notes"
-          set output to ""
-          set noteItems to notes
-          set noteCount to count of noteItems
-          if noteCount > 50 then set noteCount to 50
-          repeat with i from 1 to noteCount
-            set n to item i of noteItems
-            set noteName to name of n
-            set noteId to id of n
-            try
-              try
-            set noteFolder to name of container of n
-          on error
-            set noteFolder to "Notes"
-          end try
-            on error
-              set noteFolder to "Notes"
-            end try
-            set noteCreated to creation date of n as text
-            set noteModified to modification date of n as text
-            set noteBody to plaintext of n
-            if length of noteBody > 100 then
-              set noteSnippet to text 1 thru 100 of noteBody
-            else
-              set noteSnippet to noteBody
-            end if
-            set output to output & noteId & ${RS} & noteName & ${RS} & noteFolder & ${RS} & noteCreated & ${RS} & noteModified & ${RS} & noteSnippet
-            if i < noteCount then
-              set output to output & ${US}
-            end if
-          end repeat
-          return output
-        end tell
-      `;
+    if (total === 0 || offset >= total) {
+      return c.json({ notes: [], total, hasMore: false });
     }
+
+    // Get notes with pagination (AppleScript is 1-indexed)
+    const startIdx = offset + 1;
+    const endIdx = Math.min(offset + limit, total);
+
+    const script = `
+      tell application "Notes"
+        set output to ""
+        set targetFolder to first folder whose id is "${folderId}"
+        set folderName to name of targetFolder
+        set noteItems to notes of targetFolder
+        repeat with i from ${startIdx} to ${endIdx}
+          set n to item i of noteItems
+          set noteName to name of n
+          set noteId to id of n
+          set noteCreated to creation date of n as text
+          set noteModified to modification date of n as text
+          set noteBody to plaintext of n
+          if length of noteBody > 100 then
+            set noteSnippet to text 1 thru 100 of noteBody
+          else
+            set noteSnippet to noteBody
+          end if
+          set output to output & noteId & ${RS} & noteName & ${RS} & folderName & ${RS} & noteCreated & ${RS} & noteModified & ${RS} & noteSnippet
+          if i < ${endIdx} then
+            set output to output & ${US}
+          end if
+        end repeat
+        return output
+      end tell
+    `;
 
     const result = await runAppleScript(script);
 
     if (!result) {
-      return c.json({ notes: [] });
+      return c.json({ notes: [], total, hasMore: offset + limit < total });
     }
 
-    // ASCII 31 = unit separator between items, ASCII 30 = record separator within item
     const notes: NoteItem[] = result.split(String.fromCharCode(31)).map(item => {
       const parts = item.split(String.fromCharCode(30));
       return {
-        id: (parts[0] || '').replace(/^"|"$/g, ''),  // Remove extra quotes
+        id: (parts[0] || '').replace(/^"|"$/g, ''),
         name: parts[1] || 'Untitled',
         folder: parts[2] || '',
         createdAt: parts[3] || '',
@@ -261,7 +242,11 @@ app.get('/notes', async (c) => {
       };
     }).filter(n => n.id);
 
-    return c.json({ notes });
+    return c.json({
+      notes,
+      total,
+      hasMore: offset + limit < total,
+    });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 500);
   }
