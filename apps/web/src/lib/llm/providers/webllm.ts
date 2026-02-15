@@ -152,8 +152,8 @@ export class WebLLMProvider extends BaseLLMProvider {
    */
   getModelSize(): string {
     const sizes: Record<string, string> = {
-      'Qwen2.5-0.5B-Instruct-q4f16_1-MLC': '~500 MB',
-      'SmolLM2-360M-Instruct-q4f16_1-MLC': '~300 MB',
+      'SmolLM2-360M-Instruct-q4f16_1-MLC': '~250 MB',
+      'Qwen2.5-0.5B-Instruct-q4f16_1-MLC': '~400 MB',
       'Phi-3-mini-4k-instruct-q4f16_1-MLC': '~2 GB',
     };
     return sizes[this.config?.model || ''] || 'Unknown';

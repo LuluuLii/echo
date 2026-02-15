@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMaterialsStore, type ActivationCard } from '../lib/store/materials';
 import { generateActivationCard } from '../lib/activation-templates';
@@ -6,46 +6,62 @@ import { AddMaterialModal } from '../components/AddMaterialModal';
 
 export function Activation() {
   const navigate = useNavigate();
-  const { currentCard, materials, setCurrentCard, clearCurrentCard, addMaterial } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, clearCurrentCard, addMaterial, setMaterialTranslation } = useMaterialsStore();
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedCard, setGeneratedCard] = useState<ActivationCard | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Clear stale card on mount - always generate fresh from current materials
+  // Ref to prevent duplicate generation (React StrictMode renders twice)
+  const generationStartedRef = useRef(false);
+
+  // Clear stale card on mount
   useEffect(() => {
     clearCurrentCard();
   }, [clearCurrentCard]);
 
-  // Auto-generate card if none exists and we have materials
+  // Auto-generate card on mount (with StrictMode protection)
   useEffect(() => {
-    if (!currentCard && !generatedCard && materials.length > 0 && !isGenerating) {
-      setIsGenerating(true);
-
-      // Select random 2-4 materials for daily activation
-      const shuffled = [...materials].sort(() => Math.random() - 0.5);
-      const selectedCount = Math.min(Math.max(2, Math.floor(Math.random() * 3) + 2), materials.length);
-      const selectedMaterials = shuffled.slice(0, selectedCount);
-
-      generateActivationCard(
-        selectedMaterials.map((m) => ({
-          id: m.id,
-          content: m.content,
-          note: m.note,
-        }))
-      )
-        .then((card) => {
-          setGeneratedCard(card);
-          setCurrentCard(card);
-        })
-        .catch((error) => {
-          console.error('Failed to generate activation card:', error);
-        })
-        .finally(() => {
-          setIsGenerating(false);
-        });
+    // Skip if generation already started or in progress
+    if (generationStartedRef.current || isGenerating || generatedCard) {
+      return;
     }
-  }, [currentCard, generatedCard, materials, isGenerating, setCurrentCard]);
+
+    if (materials.length === 0) {
+      return;
+    }
+
+    generationStartedRef.current = true;
+    setIsGenerating(true);
+
+    // Select random 2-4 materials for daily activation
+    const shuffled = [...materials].sort(() => Math.random() - 0.5);
+    const selectedCount = Math.min(Math.max(2, Math.floor(Math.random() * 3) + 2), materials.length);
+    const selectedMaterials = shuffled.slice(0, selectedCount);
+
+    generateActivationCard(
+      selectedMaterials.map((m) => ({
+        id: m.id,
+        content: m.content,
+        contentEn: m.contentEn,
+        note: m.note,
+      })),
+      undefined,
+      setMaterialTranslation
+    )
+      .then((card) => {
+        setGeneratedCard(card);
+        setCurrentCard(card);
+      })
+      .catch((error) => {
+        console.error('Failed to generate activation card:', error);
+      })
+      .finally(() => {
+        setIsGenerating(false);
+      });
+    // Note: Empty deps - only run once on mount. generationStartedRef prevents StrictMode double-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Use current card, generated card, or show loading/empty state
   const card = currentCard || generatedCard;
@@ -82,8 +98,11 @@ export function Activation() {
         selectedMaterials.map((m) => ({
           id: m.id,
           content: m.content,
+          contentEn: m.contentEn,
           note: m.note,
-        }))
+        })),
+        undefined,
+        setMaterialTranslation
       );
       setGeneratedCard(newCard);
       setCurrentCard(newCard);
@@ -219,6 +238,12 @@ export function Activation() {
               <p className="text-echo-text text-sm leading-relaxed">
                 {hoveredMaterial.content}
               </p>
+              {/* English translation */}
+              {hoveredMaterial.contentEn && hoveredMaterial.contentEn !== hoveredMaterial.content && (
+                <p className="text-blue-600 text-sm leading-relaxed mt-2 pt-2 border-t border-gray-100">
+                  {hoveredMaterial.contentEn}
+                </p>
+              )}
               {hoveredMaterial.note && (
                 <p className="text-echo-muted text-sm italic mt-2">
                   Note: {hoveredMaterial.note}

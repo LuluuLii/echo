@@ -46,28 +46,47 @@ export class AnthropicProvider extends BaseLLMProvider {
 
     const { systemMessage, otherMessages } = this.extractSystemMessage(messages);
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: options?.maxTokens ?? 2048,
-        ...(systemMessage && { system: systemMessage }),
-        messages: otherMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
-    });
+    let response: Response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.config.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          max_tokens: options?.maxTokens ?? 2048,
+          ...(systemMessage && { system: systemMessage }),
+          messages: otherMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }),
+      });
+    } catch (e) {
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        throw new Error('Network error: Cannot reach Anthropic API');
+      }
+      throw e;
+    }
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} - ${error}`);
+      const errorText = await response.text().catch(() => '');
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+      } catch {
+        if (errorText) errorMessage += `: ${errorText.slice(0, 200)}`;
+      }
+
+      if (response.status === 401) {
+        throw new Error(`Invalid API key: ${errorMessage}`);
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();

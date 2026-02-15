@@ -68,22 +68,18 @@ export class TemplateProvider extends BaseLLMProvider {
     const lastUserMessage = messages.filter((m) => m.role === 'user').pop();
     const systemMessage = messages.find((m) => m.role === 'system');
 
-    // Check if this is an activation card request
-    if (systemMessage?.content.toLowerCase().includes('activation')) {
+    // Check if this is an activation card request - return proper JSON format
+    if (systemMessage?.content.toLowerCase().includes('activation card')) {
       return this.generateActivationResponse();
     }
 
-    // Check if this is an echo session
-    if (systemMessage?.content.toLowerCase().includes('echo')) {
-      return this.generateEchoResponse(messages, lastUserMessage?.content);
-    }
-
-    // Default response
-    return this.getRandomItem(TEMPLATES.echo.encouragements);
+    // For Echo conversations and other requests, return natural text
+    return this.generateEchoResponse(messages, lastUserMessage?.content);
   }
 
   private generateActivationResponse(): string {
-    // Return a JSON structure for activation card
+    // Return a properly formatted JSON structure for activation card
+    // This matches the expected format from AI providers
     return JSON.stringify({
       emotionalAnchor: TEMPLATES.activation.emotionalAnchor,
       livedExperience: TEMPLATES.activation.livedExperience,

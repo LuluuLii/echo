@@ -15,7 +15,15 @@ export function buildEchoSystemPrompt(
   materials: RawMaterial[]
 ): string {
   const materialsList = materials
-    .map((m, i) => `[${i + 1}] ${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`)
+    .map((m, i) => {
+      const preview = m.content.slice(0, 200) + (m.content.length > 200 ? '...' : '');
+      // Include English translation if available
+      if (m.contentEn && m.contentEn !== m.content) {
+        const enPreview = m.contentEn.slice(0, 200) + (m.contentEn.length > 200 ? '...' : '');
+        return `[${i + 1}] ${preview}\n    (English: ${enPreview})`;
+      }
+      return `[${i + 1}] ${preview}`;
+    })
     .join('\n');
 
   return `You are Echo, a gentle conversational companion helping users express themselves in a foreign language.
@@ -43,9 +51,9 @@ GUIDELINES:
 - Never lecture or explain grammar
 - Never ask "Would you like me to correct..."
 - Don't be overly enthusiastic or use excessive praise
-- Respond in the same language the user is using
-- If they switch languages, follow their lead
+- ALWAYS respond in English to help the user practice
 - Focus on WHAT they're saying, not HOW they're saying it
+- Keep responses simple and conversational
 
 START:
 If this is the start of conversation, warmly invite them to share based on the activation card's invitation: "${card.invitation}"`;

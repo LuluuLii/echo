@@ -17,7 +17,7 @@ The card should:
 3. Suggest natural expressions (phrases, sentence starters) they might use
 4. End with a warm invitation to share their own experience
 
-Output ONLY valid JSON in this exact format:
+IMPORTANT: Output ONLY raw JSON (no markdown code blocks). Use this exact format:
 {
   "emotionalAnchor": "A brief emotional connection point (1-2 sentences)",
   "livedExperience": "A relatable scenario that evokes the feeling (2-3 sentences)",
@@ -26,12 +26,12 @@ Output ONLY valid JSON in this exact format:
 }
 
 Guidelines:
+- ALWAYS respond in English, regardless of the materials' language
 - Write naturally, as if speaking to a friend
 - Focus on universal emotions and experiences
 - The expressions should be conversation starters, not complete sentences
 - Make it personal and relatable, not academic
-- If the topic is provided, weave it naturally into the card
-- If materials are in different languages, respond in the language of the majority`;
+- If the topic is provided, weave it naturally into the card`;
 
 /**
  * Build activation card generation messages
@@ -41,7 +41,14 @@ export function buildActivationPrompt(
   topic?: string
 ): ChatMessage[] {
   const materialsList = materials
-    .map((m, i) => `[Material ${i + 1}]\n${m.content}${m.note ? `\n(Note: ${m.note})` : ''}`)
+    .map((m, i) => {
+      // If we have an English translation, include both for context
+      // This helps small models understand and output in English
+      if (m.contentEn && m.contentEn !== m.content) {
+        return `[Material ${i + 1}]\nOriginal: ${m.content}\nEnglish: ${m.contentEn}${m.note ? `\n(Note: ${m.note})` : ''}`;
+      }
+      return `[Material ${i + 1}]\n${m.content}${m.note ? `\n(Note: ${m.note})` : ''}`;
+    })
     .join('\n\n');
 
   const userPrompt = topic
@@ -66,9 +73,19 @@ export interface ActivationCard {
 
 export function parseActivationResponse(response: string): ActivationCard | null {
   try {
-    // Try to extract JSON from response (in case there's extra text)
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return null;
+    // Remove markdown code block if present (```json ... ```)
+    let content = response;
+    const codeBlockMatch = response.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      content = codeBlockMatch[1].trim();
+    }
+
+    // Try to extract JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('[Activation] No JSON found in response:', content.slice(0, 200));
+      return null;
+    }
 
     const parsed = JSON.parse(jsonMatch[0]);
 
@@ -79,6 +96,7 @@ export function parseActivationResponse(response: string): ActivationCard | null
       Array.isArray(parsed.expressions) &&
       typeof parsed.invitation === 'string'
     ) {
+      console.log('[Activation] Successfully parsed activation card');
       return {
         emotionalAnchor: parsed.emotionalAnchor,
         livedExperience: parsed.livedExperience,
@@ -87,8 +105,10 @@ export function parseActivationResponse(response: string): ActivationCard | null
       };
     }
 
+    console.log('[Activation] JSON missing required fields:', Object.keys(parsed));
     return null;
-  } catch {
+  } catch (e) {
+    console.log('[Activation] Failed to parse JSON:', e);
     return null;
   }
 }

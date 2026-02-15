@@ -12,7 +12,8 @@ export function ChatInput({
   onSend,
 }: ChatInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Don't trigger send during IME composition (Chinese/Japanese input)
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       onSend();
     }

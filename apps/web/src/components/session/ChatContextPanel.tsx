@@ -112,6 +112,10 @@ export function ChatContextPanel({
                     className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
                   >
                     <p className="text-echo-text text-sm line-clamp-2">{material.content}</p>
+                    {/* Show English translation inline */}
+                    {material.contentEn && material.contentEn !== material.content && (
+                      <p className="text-blue-600 text-xs mt-1 line-clamp-2">{material.contentEn}</p>
+                    )}
                     {material.note && (
                       <p className="text-echo-hint text-xs mt-1 italic">Note: {material.note}</p>
                     )}
@@ -124,6 +128,15 @@ export function ChatContextPanel({
                       <p className="text-echo-text text-sm leading-relaxed whitespace-pre-wrap">
                         {hoveredMaterial.content}
                       </p>
+                      {/* English translation in hover popup */}
+                      {hoveredMaterial.contentEn && hoveredMaterial.contentEn !== hoveredMaterial.content && (
+                        <div className="mt-2 pt-2 border-t border-gray-100">
+                          <p className="text-echo-hint text-xs uppercase tracking-wide mb-1">English</p>
+                          <p className="text-blue-600 text-sm leading-relaxed">
+                            {hoveredMaterial.contentEn}
+                          </p>
+                        </div>
+                      )}
                       {hoveredMaterial.note && (
                         <p className="text-echo-muted text-sm italic mt-2 pt-2 border-t border-gray-100">
                           Note: {hoveredMaterial.note}

@@ -219,34 +219,84 @@ export function generateOfflineCard(
 
 /**
  * Generate activation card using LLMService.
+ * Auto-translates materials without English translation.
  * Falls back to offline templates when LLM is not available.
+ *
+ * @param materials - Materials with optional contentEn
+ * @param topic - Optional topic for the card
+ * @param onTranslate - Callback to save translations to store
  */
 export async function generateActivationCard(
-  materials: Array<{ id: string; content: string; note?: string }>,
-  topic?: string
+  materials: Array<{ id: string; content: string; contentEn?: string; note?: string }>,
+  topic?: string,
+  onTranslate?: (id: string, contentEn: string) => void
 ): Promise<ActivationCard> {
   if (materials.length === 0) {
     throw new Error('At least one material is required');
   }
 
   const llmService = getLLMService();
+
+  // Wait for LLM service to be initialized before proceeding
+  await llmService.waitForInit();
+
+  const config = llmService.getConfig();
   const activeProvider = llmService.getActiveProvider();
+
+  // Debug logging
+  console.log('[Activation] Config:', {
+    activeProviderId: config.activeProvider,
+    hasProvider: !!activeProvider,
+    providerReady: activeProvider?.isReady(),
+    providerId: activeProvider?.id,
+  });
 
   // If no provider is ready or using template provider, use offline generation
   if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
-    console.log('[Activation] Using offline generation (no LLM available)');
+    console.log('[Activation] Using offline generation - reason:',
+      !activeProvider ? 'no provider' :
+      !activeProvider.isReady() ? 'provider not ready' :
+      'using template provider'
+    );
     return generateOfflineCard(materials);
   }
 
   try {
+    // Auto-translate materials that don't have English translation
+    const { translateToEnglish } = await import('./translation');
+    const translatedMaterials = await Promise.all(
+      materials.map(async (m) => {
+        // Skip if already has English translation or content is already English
+        if (m.contentEn) {
+          return m;
+        }
+
+        console.log(`[Activation] Auto-translating material ${m.id.slice(0, 8)}...`);
+        const result = await translateToEnglish(m.content);
+
+        if (result.success && result.translation) {
+          // Save translation to store via callback
+          onTranslate?.(m.id, result.translation);
+          return { ...m, contentEn: result.translation };
+        }
+
+        return m;
+      })
+    );
+
     console.log(`[Activation] Generating with ${activeProvider.name}`);
 
-    // Build prompt and call LLM
+    // Build prompt and call LLM with translated materials
     const messages = buildActivationPrompt(
-      materials.map((m) => ({ ...m, id: m.id, createdAt: Date.now(), type: 'text' as const })),
+      translatedMaterials.map((m) => ({
+        ...m,
+        id: m.id,
+        createdAt: Date.now(),
+        type: 'text' as const,
+      })),
       topic
     );
-    const response = await llmService.chat(messages);
+    const response = await activeProvider.chat(messages);
 
     // Parse the response
     const parsed = parseActivationResponse(response);

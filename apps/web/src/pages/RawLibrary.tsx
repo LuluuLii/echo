@@ -4,18 +4,23 @@ import { AddMaterialModal } from '../components/AddMaterialModal';
 import { MaterialDetailModal } from '../components/MaterialDetailModal';
 import { useMaterialsStore, type RawMaterial } from '../lib/store/materials';
 import { clusterMaterials, type ClusterResult } from '../lib/clustering';
+import { translateToEnglish } from '../lib/translation';
 
 type ViewMode = 'list' | 'clusters';
 
 export function RawLibrary() {
   const navigate = useNavigate();
-  const { materials, addMaterial, updateMaterial, deleteMaterial } =
+  const { materials, addMaterial, updateMaterial, deleteMaterial, setMaterialTranslation } =
     useMaterialsStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterial | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [clusterResult, setClusterResult] = useState<ClusterResult | null>(null);
   const [isClustering, setIsClustering] = useState(false);
+
+  // Translation state
+  const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
+  const [translateAllProgress, setTranslateAllProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Run clustering when switching to cluster view
   useEffect(() => {
@@ -50,6 +55,60 @@ export function RawLibrary() {
   const handleGoToActivation = () => {
     navigate('/');
   };
+
+  // Translate a single material
+  const handleTranslate = async (material: RawMaterial) => {
+    if (translatingIds.has(material.id)) return;
+
+    setTranslatingIds((prev) => new Set(prev).add(material.id));
+    try {
+      const result = await translateToEnglish(material.content);
+      if (result.success && result.translation) {
+        setMaterialTranslation(material.id, result.translation);
+      }
+    } catch (error) {
+      console.error('Translation failed:', error);
+    } finally {
+      setTranslatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(material.id);
+        return next;
+      });
+    }
+  };
+
+  // Translate all materials without translations
+  const handleTranslateAll = async () => {
+    const needsTranslation = materials.filter((m) => !m.contentEn);
+    if (needsTranslation.length === 0) return;
+
+    setTranslateAllProgress({ current: 0, total: needsTranslation.length });
+
+    for (let i = 0; i < needsTranslation.length; i++) {
+      const material = needsTranslation[i];
+      setTranslatingIds((prev) => new Set(prev).add(material.id));
+
+      try {
+        const result = await translateToEnglish(material.content);
+        if (result.success && result.translation) {
+          setMaterialTranslation(material.id, result.translation);
+        }
+      } catch (error) {
+        console.error('Translation failed for', material.id, error);
+      }
+
+      setTranslatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(material.id);
+        return next;
+      });
+      setTranslateAllProgress({ current: i + 1, total: needsTranslation.length });
+    }
+
+    setTranslateAllProgress(null);
+  };
+
+  const untranslatedCount = materials.filter((m) => !m.contentEn).length;
 
   if (materials.length === 0) {
     return (
@@ -91,9 +150,21 @@ export function RawLibrary() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Translate All Button */}
+          {untranslatedCount > 0 && (
+            <button
+              onClick={handleTranslateAll}
+              disabled={translateAllProgress !== null}
+              className="px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              {translateAllProgress
+                ? `Translating ${translateAllProgress.current}/${translateAllProgress.total}...`
+                : `Translate All (${untranslatedCount})`}
+            </button>
+          )}
           {/* View Mode Toggle */}
           {materials.length >= 3 && (
-            <div className="flex bg-gray-100 rounded-lg p-1 mr-2">
+            <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('list')}
                 className={`px-3 py-1 text-sm rounded-md transition-colors ${
@@ -137,22 +208,45 @@ export function RawLibrary() {
               <p className="text-echo-text leading-relaxed line-clamp-3 group-hover:line-clamp-none transition-all">
                 {material.content}
               </p>
+              {/* English translation */}
+              {material.contentEn && material.contentEn !== material.content && (
+                <p className="text-blue-600 text-sm mt-2 leading-relaxed line-clamp-2 group-hover:line-clamp-none">
+                  {material.contentEn}
+                </p>
+              )}
               {material.note && (
                 <p className="text-echo-muted text-sm mt-2 italic">
                   Note: {material.note}
                 </p>
               )}
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
-                <p className="text-echo-hint text-xs">
-                  {new Date(material.createdAt).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </p>
+                <div className="flex items-center gap-3">
+                  <p className="text-echo-hint text-xs">
+                    {new Date(material.createdAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                  {/* Translation status */}
+                  {material.contentEn ? (
+                    <span className="text-xs text-green-600">EN</span>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTranslate(material);
+                      }}
+                      disabled={translatingIds.has(material.id)}
+                      className="text-xs text-blue-500 hover:text-blue-600 disabled:text-gray-400"
+                    >
+                      {translatingIds.has(material.id) ? 'Translating...' : 'Translate'}
+                    </button>
+                  )}
+                </div>
                 <span className="text-echo-hint text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                  Click to view full content →
+                  Click to view →
                 </span>
               </div>
             </div>

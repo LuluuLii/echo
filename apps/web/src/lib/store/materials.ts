@@ -24,6 +24,7 @@ export interface RawMaterial {
   id: string;
   type: 'text' | 'image';
   content: string;
+  contentEn?: string;  // English translation of content
   note?: string;
   createdAt: number;
 }
@@ -75,6 +76,7 @@ interface MaterialsStore {
   // Material operations
   addMaterial: (content: string, type: 'text' | 'image', note?: string) => void;
   updateMaterial: (id: string, content: string, note?: string) => void;
+  setMaterialTranslation: (id: string, contentEn: string) => void;
   deleteMaterial: (id: string) => void;
   getMaterial: (id: string) => RawMaterial | undefined;
 
@@ -112,6 +114,7 @@ function toRawMaterial(m: LoroMaterial): RawMaterial {
     id: m.id,
     type: m.type,
     content: m.content,
+    contentEn: m.contentEn,
     note: m.note,
     createdAt: m.createdAt,
   };
@@ -241,6 +244,18 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     set((state) => ({
       materials: state.materials.map((m) =>
         m.id === id ? { ...m, content, note } : m
+      ),
+    }));
+  },
+
+  setMaterialTranslation: (id, contentEn) => {
+    // Update in Loro
+    loroUpdateMaterial(id, { contentEn });
+
+    // Update Zustand state
+    set((state) => ({
+      materials: state.materials.map((m) =>
+        m.id === id ? { ...m, contentEn } : m
       ),
     }));
   },

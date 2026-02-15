@@ -128,7 +128,7 @@ export const DEFAULT_MODELS = {
   anthropic: 'claude-3-haiku-20240307',
   gemini: 'gemini-1.5-flash',
   ollama: 'qwen2.5:0.5b',
-  webllm: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC',
+  webllm: 'SmolLM2-360M-Instruct-q4f16_1-MLC',
 } as const;
 
 export const PROVIDER_INFO = {
@@ -155,7 +155,7 @@ export const PROVIDER_INFO = {
   webllm: {
     name: 'On-Device (WebLLM)',
     type: 'edge' as const,
-    models: ['Qwen2.5-0.5B-Instruct-q4f16_1-MLC', 'SmolLM2-360M-Instruct-q4f16_1-MLC'],
+    models: ['SmolLM2-360M-Instruct-q4f16_1-MLC', 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC'],
   },
   template: {
     name: 'Template (No AI)',

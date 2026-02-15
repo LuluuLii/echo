@@ -23,10 +23,12 @@ export function Settings() {
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudBaseUrl, setCloudBaseUrl] = useState('');
   const [cloudModel, setCloudModel] = useState('');
+  const [useCustomModel, setUseCustomModel] = useState(false);
 
   // Ollama form state
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [ollamaModel, setOllamaModel] = useState('');
+  const [useCustomOllamaModel, setUseCustomOllamaModel] = useState(false);
 
   // WebLLM state
   const [webllmModel, setWebllmModel] = useState(DEFAULT_MODELS.webllm);
@@ -68,7 +70,10 @@ export function Settings() {
       }
       if (cfg.providers.ollama) {
         setOllamaUrl(cfg.providers.ollama.baseUrl || 'http://localhost:11434');
-        setOllamaModel(cfg.providers.ollama.model || DEFAULT_MODELS.ollama);
+        const savedOllamaModel = cfg.providers.ollama.model || DEFAULT_MODELS.ollama;
+        setOllamaModel(savedOllamaModel);
+        const isOllamaCustom = !PROVIDER_INFO.ollama.models.includes(savedOllamaModel);
+        setUseCustomOllamaModel(isOllamaCustom);
       }
       if (cfg.providers.webllm) {
         setWebllmModel(cfg.providers.webllm.model || DEFAULT_MODELS.webllm);
@@ -92,7 +97,11 @@ export function Settings() {
     const providerConfig = config.providers[selectedCloudProvider];
     if (providerConfig && 'apiKey' in providerConfig) {
       setCloudApiKey(providerConfig.apiKey || '');
-      setCloudModel(providerConfig.model || DEFAULT_MODELS[selectedCloudProvider]);
+      const savedModel = providerConfig.model || DEFAULT_MODELS[selectedCloudProvider];
+      setCloudModel(savedModel);
+      // Check if the saved model is a custom one (not in the predefined list)
+      const isCustom = !PROVIDER_INFO[selectedCloudProvider].models.includes(savedModel);
+      setUseCustomModel(isCustom);
       if ('baseUrl' in providerConfig) {
         setCloudBaseUrl(providerConfig.baseUrl || '');
       } else {
@@ -102,6 +111,7 @@ export function Settings() {
       setCloudApiKey('');
       setCloudBaseUrl('');
       setCloudModel(DEFAULT_MODELS[selectedCloudProvider]);
+      setUseCustomModel(false);
     }
   }, [selectedCloudProvider, config]);
 
@@ -204,9 +214,27 @@ export function Settings() {
     const result = testResults[providerId];
     if (!result) return null;
     if (result.success) {
-      return <span className="text-green-600 text-sm">Connected</span>;
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-green-600 text-sm font-medium">Connected</span>
+          {result.latencyMs && (
+            <span className="text-echo-hint text-xs">({result.latencyMs}ms)</span>
+          )}
+        </div>
+      );
     }
-    return <span className="text-red-500 text-sm">{result.error}</span>;
+    return null; // Error will be shown in a separate block
+  };
+
+  const getTestErrorDisplay = (providerId: string) => {
+    const result = testResults[providerId];
+    if (!result || result.success) return null;
+    return (
+      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-700 text-sm font-medium mb-1">Connection Failed</p>
+        <p className="text-red-600 text-sm">{result.error}</p>
+      </div>
+    );
   };
 
   if (!config) {
@@ -220,7 +248,52 @@ export function Settings() {
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-semibold text-echo-text mb-2">Settings</h1>
-      <p className="text-echo-muted mb-8">Configure AI providers for activation cards and conversations.</p>
+      <p className="text-echo-muted mb-6">Configure AI providers for activation cards and conversations.</p>
+
+      {/* Active Provider Section - At Top */}
+      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-medium text-echo-text">Active Provider</h2>
+          <button
+            onClick={handleSaveActiveProvider}
+            className="px-4 py-2 bg-echo-text text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
+          >
+            Save
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {([
+            { type: 'cloud', label: 'Cloud API', icon: '☁️' },
+            { type: 'local', label: 'Ollama', icon: '🖥️' },
+            { type: 'edge', label: 'On-Device', icon: '📱' },
+            { type: 'template', label: 'No AI', icon: '📝' },
+          ] as const).map(({ type, label, icon }) => (
+            <button
+              key={type}
+              onClick={() => setActiveType(type)}
+              className={`flex items-center gap-2 p-3 rounded-xl border transition-colors ${
+                activeType === type
+                  ? 'border-echo-text bg-gray-50 text-echo-text'
+                  : 'border-gray-200 text-echo-muted hover:border-gray-300'
+              }`}
+            >
+              <span>{icon}</span>
+              <span className="font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+
+        <label className="flex items-center gap-2 text-sm text-echo-muted">
+          <input
+            type="checkbox"
+            checked={autoFallback}
+            onChange={(e) => setAutoFallback(e.target.checked)}
+            className="w-4 h-4"
+          />
+          Auto-fallback when provider unavailable
+        </label>
+      </section>
 
       {/* Cloud API Section */}
       <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
@@ -260,16 +333,47 @@ export function Settings() {
 
         {/* Model selector */}
         <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">Model</label>
-          <select
-            value={cloudModel}
-            onChange={(e) => setCloudModel(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-          >
-            {PROVIDER_INFO[selectedCloudProvider].models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm text-echo-muted">Model</label>
+            <label className="flex items-center gap-2 text-sm text-echo-hint cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useCustomModel}
+                onChange={(e) => {
+                  setUseCustomModel(e.target.checked);
+                  if (!e.target.checked) {
+                    setCloudModel(DEFAULT_MODELS[selectedCloudProvider]);
+                  }
+                }}
+                className="w-3.5 h-3.5"
+              />
+              Custom model
+            </label>
+          </div>
+          {useCustomModel ? (
+            <input
+              type="text"
+              value={cloudModel}
+              onChange={(e) => setCloudModel(e.target.value)}
+              placeholder="e.g., anthropic/claude-3.5-sonnet, openai/gpt-4o"
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
+            />
+          ) : (
+            <select
+              value={cloudModel}
+              onChange={(e) => setCloudModel(e.target.value)}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
+            >
+              {PROVIDER_INFO[selectedCloudProvider].models.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          )}
+          {useCustomModel && selectedCloudProvider === 'openai' && (
+            <p className="text-echo-hint text-xs mt-2">
+              For OpenRouter, use format like <code className="bg-gray-100 px-1 rounded">anthropic/claude-3.5-sonnet</code>
+            </p>
+          )}
         </div>
 
         {/* Base URL (OpenAI only) */}
@@ -299,6 +403,24 @@ export function Settings() {
           </button>
           {getTestResultDisplay(selectedCloudProvider)}
         </div>
+
+        {/* Error display */}
+        {getTestErrorDisplay(selectedCloudProvider)}
+
+        {/* Help text for CORS - only show when there's a CORS-related error */}
+        {selectedCloudProvider === 'openai' &&
+         testResults[selectedCloudProvider]?.error?.includes('CORS') && (
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-blue-800 text-xs font-medium mb-1">Browser Access (CORS)</p>
+            <p className="text-blue-700 text-xs">
+              This service doesn't allow direct browser access. Try these CORS-enabled alternatives:
+            </p>
+            <ul className="text-blue-700 text-xs mt-1 ml-4 list-disc">
+              <li><a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="underline">OpenRouter</a> - Base URL: <code className="bg-blue-100 px-1 rounded">https://openrouter.ai/api/v1</code></li>
+              <li><a href="https://api.together.xyz" target="_blank" rel="noopener noreferrer" className="underline">Together AI</a> - Base URL: <code className="bg-blue-100 px-1 rounded">https://api.together.xyz/v1</code></li>
+            </ul>
+          </div>
+        )}
       </section>
 
       {/* Local Server Section */}
@@ -319,16 +441,42 @@ export function Settings() {
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">Model</label>
-          <select
-            value={ollamaModel}
-            onChange={(e) => setOllamaModel(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-          >
-            {PROVIDER_INFO.ollama.models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm text-echo-muted">Model</label>
+            <label className="flex items-center gap-2 text-sm text-echo-hint cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useCustomOllamaModel}
+                onChange={(e) => {
+                  setUseCustomOllamaModel(e.target.checked);
+                  if (!e.target.checked) {
+                    setOllamaModel(DEFAULT_MODELS.ollama);
+                  }
+                }}
+                className="w-3.5 h-3.5"
+              />
+              Custom model
+            </label>
+          </div>
+          {useCustomOllamaModel ? (
+            <input
+              type="text"
+              value={ollamaModel}
+              onChange={(e) => setOllamaModel(e.target.value)}
+              placeholder="e.g., llama3:8b, mistral:7b"
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
+            />
+          ) : (
+            <select
+              value={ollamaModel}
+              onChange={(e) => setOllamaModel(e.target.value)}
+              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
+            >
+              {PROVIDER_INFO.ollama.models.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="flex items-center gap-4">
@@ -341,6 +489,9 @@ export function Settings() {
           </button>
           {getTestResultDisplay('ollama')}
         </div>
+
+        {/* Error display */}
+        {getTestErrorDisplay('ollama')}
 
         <p className="text-echo-hint text-xs mt-3">
           Run <code className="bg-gray-100 px-1 rounded">ollama serve</code> locally to use this option.
@@ -392,67 +543,12 @@ export function Settings() {
             ? 'Downloaded'
             : isDownloading
               ? 'Downloading...'
-              : 'Download Model (~500MB)'}
+              : `Download Model (${webllmModel.includes('SmolLM2') ? '~250MB' : '~400MB'})`}
         </button>
 
         <p className="text-echo-hint text-xs mt-3">
           Runs entirely in your browser using WebGPU. Requires a modern browser with WebGPU support.
         </p>
-      </section>
-
-      {/* Active Provider Section */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <h2 className="text-lg font-medium text-echo-text mb-4">Active Provider</h2>
-
-        <div className="space-y-3 mb-4">
-          {([
-            { type: 'cloud', label: 'Cloud API', desc: `Use ${PROVIDER_INFO[selectedCloudProvider].name}` },
-            { type: 'local', label: 'Local Server', desc: 'Use Ollama' },
-            { type: 'edge', label: 'On-Device', desc: 'Use WebLLM (offline)' },
-            { type: 'template', label: 'No AI', desc: 'Use template responses' },
-          ] as const).map(({ type, label, desc }) => (
-            <label
-              key={type}
-              className={`flex items-center p-3 rounded-xl border cursor-pointer transition-colors ${
-                activeType === type
-                  ? 'border-echo-text bg-gray-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <input
-                type="radio"
-                name="activeProvider"
-                value={type}
-                checked={activeType === type}
-                onChange={() => setActiveType(type)}
-                className="mr-3"
-              />
-              <div>
-                <div className="font-medium text-echo-text">{label}</div>
-                <div className="text-sm text-echo-muted">{desc}</div>
-              </div>
-            </label>
-          ))}
-        </div>
-
-        <label className="flex items-center gap-3 mb-4">
-          <input
-            type="checkbox"
-            checked={autoFallback}
-            onChange={(e) => setAutoFallback(e.target.checked)}
-            className="w-4 h-4"
-          />
-          <span className="text-sm text-echo-muted">
-            Auto-fallback when primary provider is unavailable
-          </span>
-        </label>
-
-        <button
-          onClick={handleSaveActiveProvider}
-          className="w-full bg-echo-text text-white py-3 rounded-xl font-medium hover:bg-gray-700 transition-colors"
-        >
-          Save Settings
-        </button>
       </section>
 
       {/* Info */}

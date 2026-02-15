@@ -48,12 +48,22 @@ export class OllamaProvider extends BaseLLMProvider {
   private async testConnection(): Promise<void> {
     if (!this.config) throw new Error('Not configured');
 
-    const response = await fetch(`${this.config.baseUrl}/api/tags`, {
-      method: 'GET',
-    });
+    try {
+      const response = await fetch(`${this.config.baseUrl}/api/tags`, {
+        method: 'GET',
+      });
 
-    if (!response.ok) {
-      throw new Error(`Ollama not reachable: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Ollama returned HTTP ${response.status}`);
+      }
+    } catch (e) {
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        throw new Error(
+          `Cannot connect to Ollama at ${this.config.baseUrl}. ` +
+          'Make sure Ollama is running: ollama serve'
+        );
+      }
+      throw e;
     }
   }
 

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { RawMaterial } from '../lib/store/materials';
 import { findSimilarMaterials } from '../lib/embedding';
+import { translateToEnglish } from '../lib/translation';
+import { useMaterialsStore } from '../lib/store/materials';
 
 interface MaterialDetailModalProps {
   material: RawMaterial;
@@ -19,12 +21,29 @@ export function MaterialDetailModal({
   onDelete,
   onSelectMaterial,
 }: MaterialDetailModalProps) {
+  const { setMaterialTranslation } = useMaterialsStore();
   const [isEditing, setIsEditing] = useState(false);
   const [content, setContent] = useState(material.content);
   const [note, setNote] = useState(material.note || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [similarMaterials, setSimilarMaterials] = useState<Array<{ material: RawMaterial; score: number }>>([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  // Handle translation
+  const handleTranslate = async () => {
+    setIsTranslating(true);
+    try {
+      const result = await translateToEnglish(material.content);
+      if (result.success && result.translation) {
+        setMaterialTranslation(material.id, result.translation);
+      }
+    } catch (error) {
+      console.error('Translation failed:', error);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   // Fetch similar materials
   useEffect(() => {
@@ -123,11 +142,33 @@ export function MaterialDetailModal({
             </div>
           ) : (
             <div className="space-y-4">
+              {/* Original content */}
               <div className="bg-gray-50 rounded-xl p-4">
                 <p className="text-echo-text leading-relaxed whitespace-pre-wrap">
                   {material.content}
                 </p>
               </div>
+
+              {/* English translation */}
+              {material.contentEn && material.contentEn !== material.content ? (
+                <div className="bg-blue-50 rounded-xl p-4">
+                  <p className="text-echo-hint text-xs uppercase tracking-wide mb-2">
+                    English Translation
+                  </p>
+                  <p className="text-blue-700 leading-relaxed whitespace-pre-wrap">
+                    {material.contentEn}
+                  </p>
+                </div>
+              ) : (
+                <button
+                  onClick={handleTranslate}
+                  disabled={isTranslating}
+                  className="w-full py-3 border-2 border-dashed border-blue-200 text-blue-500 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                >
+                  {isTranslating ? 'Translating...' : 'Translate to English'}
+                </button>
+              )}
+
               {material.note && (
                 <div className="border-l-2 border-echo-accent pl-4">
                   <p className="text-echo-hint text-xs uppercase tracking-wide mb-1">

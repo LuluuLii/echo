@@ -48,13 +48,31 @@ export class GeminiProvider extends BaseLLMProvider {
   private async testConnection(): Promise<void> {
     if (!this.config) throw new Error('Not configured');
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${this.config.apiKey}`
-    );
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${this.config.apiKey}`
+      );
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API error: ${response.status} - ${error}`);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error?.message || errorMessage;
+        } catch {
+          if (errorText) errorMessage += `: ${errorText.slice(0, 100)}`;
+        }
+
+        if (response.status === 400 || response.status === 403) {
+          throw new Error(`Invalid API key: ${errorMessage}`);
+        }
+        throw new Error(errorMessage);
+      }
+    } catch (e) {
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        throw new Error('Network error: Cannot reach Gemini API');
+      }
+      throw e;
     }
   }
 
@@ -64,31 +82,46 @@ export class GeminiProvider extends BaseLLMProvider {
     const { systemMessage, otherMessages } = this.extractSystemMessage(messages);
     const contents = this.convertToGeminiFormat(otherMessages);
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent?key=${this.config.apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents,
-          ...(systemMessage && {
-            systemInstruction: {
-              parts: [{ text: systemMessage }],
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent?key=${this.config.apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents,
+            ...(systemMessage && {
+              systemInstruction: {
+                parts: [{ text: systemMessage }],
+              },
+            }),
+            generationConfig: {
+              temperature: options?.temperature ?? 0.7,
+              maxOutputTokens: options?.maxTokens ?? 2048,
             },
           }),
-          generationConfig: {
-            temperature: options?.temperature ?? 0.7,
-            maxOutputTokens: options?.maxTokens ?? 2048,
-          },
-        }),
+        }
+      );
+    } catch (e) {
+      if (e instanceof TypeError && e.message === 'Failed to fetch') {
+        throw new Error('Network error: Cannot reach Gemini API');
       }
-    );
+      throw e;
+    }
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+      const errorText = await response.text().catch(() => '');
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorMessage;
+      } catch {
+        if (errorText) errorMessage += `: ${errorText.slice(0, 200)}`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();

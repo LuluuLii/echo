@@ -19,7 +19,7 @@ type SessionPhase = 'topic-input' | 'activation-ready' | 'chat';
 export function Session() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentCard, materials, setCurrentCard, clearCurrentCard, saveArtifact, saveSessionMemory, updateSessionMemory, deleteSessionMemory } = useMaterialsStore();
+  const { currentCard, materials, setCurrentCard, clearCurrentCard, saveArtifact, saveSessionMemory, updateSessionMemory, deleteSessionMemory, setMaterialTranslation } = useMaterialsStore();
 
   // Check if resuming a session from navigation state
   const resumeSession = (location.state as { resumeSession?: SessionMemory })?.resumeSession;
@@ -240,7 +240,11 @@ export function Session() {
     setIsGenerating(true);
 
     try {
-      const cardData = await generateActivationCard(selected.map((m) => ({ id: m.id, content: m.content, note: m.note })));
+      const cardData = await generateActivationCard(
+        selected.map((m) => ({ id: m.id, content: m.content, contentEn: m.contentEn, note: m.note })),
+        undefined,
+        setMaterialTranslation
+      );
       setGeneratedCard(cardData);
       setCurrentCard(cardData);
       setPhase('activation-ready');
@@ -261,7 +265,11 @@ export function Session() {
     setIsGenerating(true);
 
     try {
-      const cardData = await generateActivationCard(selected.map((m) => ({ id: m.id, content: m.content, note: m.note })));
+      const cardData = await generateActivationCard(
+        selected.map((m) => ({ id: m.id, content: m.content, contentEn: m.contentEn, note: m.note })),
+        undefined,
+        setMaterialTranslation
+      );
       setGeneratedCard(cardData);
       setCurrentCard(cardData);
       setPhase('activation-ready');
@@ -276,7 +284,11 @@ export function Session() {
     if (selectedMaterials.length === 0) return;
     setIsGenerating(true);
     try {
-      const cardData = await generateActivationCard(selectedMaterials.map((m) => ({ id: m.id, content: m.content, note: m.note })));
+      const cardData = await generateActivationCard(
+        selectedMaterials.map((m) => ({ id: m.id, content: m.content, contentEn: m.contentEn, note: m.note })),
+        undefined,
+        setMaterialTranslation
+      );
       setGeneratedCard(cardData);
       setCurrentCard(cardData);
     } catch (error) {
@@ -342,7 +354,20 @@ export function Session() {
 
     try {
       const llmService = getLLMService();
+
+      // Wait for LLM service to be initialized
+      await llmService.waitForInit();
+
+      const config = llmService.getConfig();
       const activeProvider = llmService.getActiveProvider();
+
+      // Debug logging
+      console.log('[Echo] Provider state:', {
+        activeProviderId: config.activeProvider,
+        hasProvider: !!activeProvider,
+        providerReady: activeProvider?.isReady(),
+        providerId: activeProvider?.id,
+      });
 
       // Build conversation history for LLM
       const conversationHistory = [...messages, userMessage].map((m) => ({
@@ -352,6 +377,11 @@ export function Session() {
 
       // If no LLM available, use fallback responses
       if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
+        console.log('[Echo] Using fallback - reason:',
+          !activeProvider ? 'no provider' :
+          !activeProvider.isReady() ? 'provider not ready' :
+          'using template provider'
+        );
         const fallbackType = conversationHistory.length <= 2 ? 'greeting' : 'encouragement';
         const reply = getRandomFallback(fallbackType as 'greeting' | 'encouragement');
         setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'echo', content: reply }]);

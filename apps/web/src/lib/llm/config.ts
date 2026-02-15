@@ -11,7 +11,8 @@ const CONFIG_KEY = 'echo-llm-config';
 const DEFAULT_CONFIG: LLMConfig = {
   activeProvider: 'template',
   providers: {},
-  fallbackChain: ['openai', 'anthropic', 'gemini', 'ollama', 'webllm', 'template'],
+  // Fallback chain: template is always last as ultimate fallback
+  fallbackChain: ['webllm', 'ollama', 'openai', 'anthropic', 'gemini', 'template'],
   autoFallback: true,
 };
 

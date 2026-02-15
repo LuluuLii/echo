@@ -9,6 +9,7 @@ export interface LoroMaterial {
   id: string;
   type: 'text' | 'image';
   content: string;
+  contentEn?: string;  // English translation of content
   note?: string;
   createdAt: number;
   updatedAt: number;
@@ -136,7 +137,7 @@ export function addMaterial(material: Omit<LoroMaterial, 'updatedAt'>): void {
  */
 export function updateMaterial(
   id: string,
-  updates: Partial<Pick<LoroMaterial, 'content' | 'note'>>
+  updates: Partial<Pick<LoroMaterial, 'content' | 'contentEn' | 'note'>>
 ): void {
   const materials = getMaterialsMap();
   const m = materials.get(id);
@@ -144,6 +145,9 @@ export function updateMaterial(
 
   if (updates.content !== undefined) {
     m.set('content', updates.content);
+  }
+  if (updates.contentEn !== undefined) {
+    m.set('contentEn', updates.contentEn);
   }
   if (updates.note !== undefined) {
     m.set('note', updates.note);
@@ -175,6 +179,7 @@ export function getMaterial(id: string): LoroMaterial | undefined {
     id: m.get('id') as string,
     type: m.get('type') as 'text' | 'image',
     content: m.get('content') as string,
+    contentEn: m.get('contentEn') as string | undefined,
     note: m.get('note') as string | undefined,
     createdAt: m.get('createdAt') as number,
     updatedAt: m.get('updatedAt') as number,
@@ -195,6 +200,7 @@ export function getAllMaterials(): LoroMaterial[] {
       id: m.get('id') as string,
       type: m.get('type') as 'text' | 'image',
       content: m.get('content') as string,
+      contentEn: m.get('contentEn') as string | undefined,
       note: m.get('note') as string | undefined,
       createdAt: m.get('createdAt') as number,
       updatedAt: m.get('updatedAt') as number,

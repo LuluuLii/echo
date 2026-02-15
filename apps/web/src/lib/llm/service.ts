@@ -21,6 +21,7 @@ export class LLMService {
   private providers: Map<string, LLMProvider>;
   private config: LLMConfig;
   private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
 
   // Event callbacks
   onProviderChange?: (providerId: string) => void;
@@ -32,11 +33,35 @@ export class LLMService {
   }
 
   /**
+   * Check if the service is initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Wait for the service to be initialized
+   * Returns immediately if already initialized
+   */
+  async waitForInit(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+  }
+
+  /**
    * Initialize the service and active provider
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
 
+    this.initPromise = this.doInitialize();
+    return this.initPromise;
+  }
+
+  private async doInitialize(): Promise<void> {
     // Initialize template provider (always available)
     const templateProvider = this.providers.get('template');
     if (templateProvider) {
@@ -62,6 +87,18 @@ export class LLMService {
     if (providerConfig && hasValidConfig(providerId, this.config)) {
       try {
         await provider.initialize(providerConfig);
+
+        // Special handling for WebLLM: auto-load model if previously configured
+        if (providerId === 'webllm' && !provider.isReady()) {
+          console.log('[LLM] WebLLM is active, auto-loading model...');
+          // Dynamic import to avoid type issues
+          const webllmProvider = provider as import('./providers/webllm').WebLLMProvider;
+          if (typeof webllmProvider.downloadModel === 'function') {
+            // Load model (this may take time, but we await it for initialization)
+            await webllmProvider.downloadModel();
+          }
+        }
+
         this.onStatusChange?.(providerId, provider.getStatus());
       } catch (e) {
         console.warn(`Failed to initialize ${providerId}:`, e);
@@ -201,10 +238,17 @@ export class LLMService {
    * Main chat method with automatic fallback
    */
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<string> {
-    // Build provider chain
-    const chain = this.config.autoFallback
-      ? this.config.fallbackChain
-      : [this.config.activeProvider];
+    // Build provider chain - always start with active provider
+    let chain: string[];
+    if (this.config.autoFallback) {
+      // Put active provider first, then rest of fallback chain (excluding active to avoid duplicate)
+      chain = [
+        this.config.activeProvider,
+        ...this.config.fallbackChain.filter(id => id !== this.config.activeProvider)
+      ];
+    } else {
+      chain = [this.config.activeProvider];
+    }
 
     let lastError: Error | null = null;
 
