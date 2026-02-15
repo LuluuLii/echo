@@ -149,7 +149,7 @@ app.get('/folders', async (c) => {
     const folders: NoteFolder[] = result.split(String.fromCharCode(31)).map(item => {
       const parts = item.split(String.fromCharCode(30));
       return {
-        id: parts[0] || '',
+        id: (parts[0] || '').replace(/^"|"$/g, ''),  // Remove extra quotes
         name: parts[1] || 'Unknown',
         noteCount: parseInt(parts[2]) || 0,
       };
@@ -194,6 +194,7 @@ app.get('/notes', async (c) => {
     }
 
     // Get notes with pagination (AppleScript is 1-indexed)
+    // Only get essential fields for speed: id, name, snippet
     const startIdx = offset + 1;
     const endIdx = Math.min(offset + limit, total);
 
@@ -207,15 +208,14 @@ app.get('/notes', async (c) => {
           set n to item i of noteItems
           set noteName to name of n
           set noteId to id of n
-          set noteCreated to creation date of n as text
-          set noteModified to modification date of n as text
+          -- Skip dates for speed, get minimal snippet
           set noteBody to plaintext of n
-          if length of noteBody > 100 then
-            set noteSnippet to text 1 thru 100 of noteBody
+          if length of noteBody > 80 then
+            set noteSnippet to text 1 thru 80 of noteBody
           else
             set noteSnippet to noteBody
           end if
-          set output to output & noteId & ${RS} & noteName & ${RS} & folderName & ${RS} & noteCreated & ${RS} & noteModified & ${RS} & noteSnippet
+          set output to output & noteId & ${RS} & noteName & ${RS} & folderName & ${RS} & noteSnippet
           if i < ${endIdx} then
             set output to output & ${US}
           end if
@@ -236,9 +236,9 @@ app.get('/notes', async (c) => {
         id: (parts[0] || '').replace(/^"|"$/g, ''),
         name: parts[1] || 'Untitled',
         folder: parts[2] || '',
-        createdAt: parts[3] || '',
-        modifiedAt: parts[4] || '',
-        snippet: parts[5] || '',
+        createdAt: '',  // Skipped for performance
+        modifiedAt: '', // Skipped for performance
+        snippet: parts[3] || '',
       };
     }).filter(n => n.id);
 
