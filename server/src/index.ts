@@ -6,6 +6,7 @@ import { logger } from 'hono/logger';
 import { activationRoutes } from './routes/activation';
 import { sessionRoutes } from './routes/session';
 import { ocrRoutes } from './routes/ocr';
+import appleNotesRoutes from './routes/apple-notes';
 
 const app = new Hono();
 
@@ -26,6 +27,7 @@ app.get('/', (c) => {
 app.route('/api/activation', activationRoutes);
 app.route('/api/session', sessionRoutes);
 app.route('/api/ocr', ocrRoutes);
+app.route('/api/apple-notes', appleNotesRoutes);
 
 // Start server
 const port = parseInt(process.env.PORT || '3000', 10);

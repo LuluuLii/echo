@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AddMaterialModal } from '../components/AddMaterialModal';
 import { MaterialDetailModal } from '../components/MaterialDetailModal';
+import { AppleNotesImporter } from '../components/AppleNotesImporter';
 import { NotesSection, FilesSection, PendingImportsPanel, type PendingImport } from '../components/library';
 import { useMaterialsStore, type RawMaterial } from '../lib/store/materials';
 import { clusterMaterials, type ClusterResult } from '../lib/clustering';
@@ -15,6 +16,7 @@ export function RawLibrary() {
   const { materials, addMaterial, updateMaterial, deleteMaterial, setMaterialTranslation } =
     useMaterialsStore();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showAppleNotesImporter, setShowAppleNotesImporter] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<RawMaterial | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [clusterResult, setClusterResult] = useState<ClusterResult | null>(null);
@@ -225,6 +227,16 @@ export function RawLibrary() {
   const handleDeleteMaterial = (id: string) => {
     deleteMaterial(id);
     setSelectedMaterial(null);
+  };
+
+  // Handle Apple Notes import
+  const handleAppleNotesImport = (notes: { id: string; name: string; body: string; folder: string }[]) => {
+    for (const note of notes) {
+      if (note.body.trim()) {
+        addMaterial(note.body.trim(), 'text', `Imported from Apple Notes: ${note.folder}/${note.name}`);
+      }
+    }
+    setShowAppleNotesImporter(false);
   };
 
   const handleGoToActivation = () => {
@@ -447,6 +459,17 @@ export function RawLibrary() {
               </button>
             </div>
           )}
+          {/* Apple Notes Import (macOS only) */}
+          {navigator.platform.toLowerCase().includes('mac') && (
+            <button
+              onClick={() => setShowAppleNotesImporter(true)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-100 text-echo-muted rounded-lg hover:bg-gray-200 transition-colors"
+              title="Import from Apple Notes"
+            >
+              <span>🍎</span>
+              <span>Notes</span>
+            </button>
+          )}
           <button
             onClick={() => setShowAddModal(true)}
             className="bg-echo-text text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors"
@@ -550,6 +573,13 @@ export function RawLibrary() {
         <AddMaterialModal
           onClose={() => setShowAddModal(false)}
           onAdd={handleAddMaterial}
+        />
+      )}
+
+      {showAppleNotesImporter && (
+        <AppleNotesImporter
+          onClose={() => setShowAppleNotesImporter(false)}
+          onImport={handleAppleNotesImport}
         />
       )}
 
