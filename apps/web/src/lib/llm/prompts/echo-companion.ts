@@ -5,13 +5,23 @@
  */
 
 import { type ChatMessage } from '../types';
-import { type RawMaterial, type ActivationCard } from '../../store/materials';
+import { type RawMaterial } from '../../store/materials';
+
+/**
+ * Card data needed for Echo prompts (subset of ActivationCard)
+ */
+export interface EchoCardData {
+  emotionalAnchor: string;
+  livedExperience: string;
+  expressions: string[];
+  invitation: string;
+}
 
 /**
  * Build system prompt for Echo companion
  */
 export function buildEchoSystemPrompt(
-  card: ActivationCard,
+  card: EchoCardData,
   materials: RawMaterial[]
 ): string {
   const materialsList = materials
@@ -62,7 +72,7 @@ If this is the start of conversation, warmly invite them to share based on the a
 /**
  * Build initial greeting message
  */
-export function buildInitialGreeting(card: ActivationCard): ChatMessage[] {
+export function buildInitialGreeting(card: EchoCardData): ChatMessage[] {
   return [
     {
       role: 'system',
@@ -84,7 +94,7 @@ Be natural and conversational. Don't introduce yourself or explain what you are.
  * Build conversation messages for Echo companion
  */
 export function buildEchoMessages(
-  card: ActivationCard,
+  card: EchoCardData,
   materials: RawMaterial[],
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>
 ): ChatMessage[] {

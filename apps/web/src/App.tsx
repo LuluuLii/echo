@@ -8,18 +8,26 @@ import { RawLibrary } from './pages/RawLibrary';
 import { Sessions } from './pages/Sessions';
 import { Settings } from './pages/Settings';
 import { useMaterialsStore } from './lib/store/materials';
+import { useUserStore } from './lib/store/user';
+import { useVocabularyStore } from './lib/store/vocabulary';
 import { initializeLLMService } from './lib/llm';
 
 function App() {
   const { init, initialized, loading } = useMaterialsStore();
+  const { init: initUser } = useUserStore();
+  const { init: initVocabulary } = useVocabularyStore();
 
   useEffect(() => {
     init();
+    // Initialize user store after materials (depends on Loro being ready)
+    initUser();
+    // Initialize vocabulary store
+    initVocabulary();
     // Initialize LLM service in parallel (doesn't block app)
     initializeLLMService().then(() => {
       console.log('[LLM] Service initialized');
     });
-  }, [init]);
+  }, [init, initUser, initVocabulary]);
 
   if (loading) {
     return (

@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useMaterialsStore, type RawMaterial, type ActivationCard, type SessionMemory } from '../lib/store/materials';
+import { useUserStore } from '../lib/store/user';
+import { useVocabularyStore } from '../lib/store/vocabulary';
 import { semanticSearch, isModelLoaded, isModelLoading, setProgressCallback, preloadModel } from '../lib/embedding';
 import { generateActivationCard } from '../lib/activation-templates';
 import { saveStreamSnapshot, clearStreamSnapshot, type StreamSnapshot } from '../lib/stream-memory';
 import { getLLMService } from '../lib/llm';
 import { buildEchoMessages, getRandomFallback } from '../lib/llm/prompts/echo-companion';
+import { scheduleBackgroundExtraction } from '../lib/background-extraction';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
   TopicInputPhase,
@@ -20,6 +23,8 @@ export function Session() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentCard, materials, setCurrentCard, clearCurrentCard, saveArtifact, saveSessionMemory, updateSessionMemory, deleteSessionMemory, setMaterialTranslation } = useMaterialsStore();
+  const { recordSession } = useUserStore();
+  const { saveUserUtterance } = useVocabularyStore();
 
   // Check if resuming a session from navigation state
   const resumeSession = (location.state as { resumeSession?: SessionMemory })?.resumeSession;
@@ -80,7 +85,12 @@ export function Session() {
     ? materials.filter((m) => generatedCard.materialIds.includes(m.id))
     : selectedMaterials;
 
-  const card = generatedCard || {
+  const card: {
+    emotionalAnchor: string;
+    livedExperience: string;
+    expressions: string[];
+    invitation: string;
+  } = generatedCard || {
     emotionalAnchor: '',
     livedExperience: '',
     expressions: [],
@@ -348,7 +358,8 @@ export function Session() {
     if (!inputText.trim() || isLoading) return;
 
     // Create session memory on first user message
-    const isFirstMessage = messages.filter((m) => m.role === 'user').length === 0;
+    const userMessageCount = messages.filter((m) => m.role === 'user').length;
+    const isFirstMessage = userMessageCount === 0;
     if (isFirstMessage) {
       createSessionMemoryIfNeeded();
     }
@@ -357,6 +368,17 @@ export function Session() {
     setMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
+
+    // Save user utterance for vocabulary tracking
+    const previousEchoMessage = messages.filter((m) => m.role === 'echo').pop();
+    saveUserUtterance({
+      sessionId: sessionIdRef.current,
+      content: userMessage.content,
+      turnIndex: userMessageCount,
+      replyTo: previousEchoMessage?.id,
+      topic: topic || resumeSession?.topic,
+      materialIds: sourceMaterials.map((m) => m.id),
+    });
 
     try {
       const llmService = getLLMService();
@@ -429,7 +451,13 @@ export function Session() {
     if (userMessages.length > 0) {
       const content = userMessages.join('\n\n');
       const materialIds = sourceMaterials.map((m) => m.id);
-      const artifact = saveArtifact(content, materialIds, card.emotionalAnchor || undefined);
+      const artifact = saveArtifact({
+        content,
+        materialIds,
+        anchor: card.emotionalAnchor || undefined,
+        sessionId: sessionIdRef.current,
+        topic: topic || resumeSession?.topic || undefined,
+      });
       artifactId = artifact.id;
     }
 
@@ -440,6 +468,22 @@ export function Session() {
         status: 'completed',
         artifactId,
         exitedAt: Date.now(),
+      });
+    }
+
+    // Record session for learning stats and topic proficiency
+    const durationMinutes = Math.round((Date.now() - sessionCreatedAtRef.current) / 60000);
+    recordSession({
+      topic: topic || resumeSession?.topic,
+      durationMinutes: Math.max(1, durationMinutes), // At least 1 minute
+      savedArtifact: !!artifactId,
+    });
+
+    // Schedule background extraction for vocabulary and profile insights
+    if (userMessages.length > 0) {
+      scheduleBackgroundExtraction({
+        sessionId: sessionIdRef.current,
+        userMessages,
       });
     }
 

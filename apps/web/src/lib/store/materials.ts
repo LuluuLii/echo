@@ -7,6 +7,9 @@ import {
   getAllMaterials,
   getMaterial as loroGetMaterial,
   addArtifact as loroAddArtifact,
+  updateArtifact as loroUpdateArtifact,
+  deleteArtifact as loroDeleteArtifact,
+  getArtifact as loroGetArtifact,
   getAllArtifacts,
   addSessionMemory as loroAddSessionMemory,
   updateSessionMemory as loroUpdateSessionMemory,
@@ -48,9 +51,14 @@ export interface ActivationCard {
 export interface EchoArtifact {
   id: string;
   content: string;           // User's final expression
+  contentEn?: string;        // English translation (if original is not English)
   materialIds: string[];     // Related materials
   anchor?: string;           // emotionalAnchor summary
+  sessionId?: string;        // Associated session ID
+  topic?: string;            // Discussion topic
+  tags?: string[];           // User-defined or auto-generated tags
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface SessionMemory {
@@ -93,7 +101,21 @@ interface MaterialsStore {
   getMaterial: (id: string) => RawMaterial | undefined;
 
   // Artifact operations
-  saveArtifact: (content: string, materialIds: string[], anchor?: string) => EchoArtifact;
+  saveArtifact: (params: {
+    content: string;
+    contentEn?: string;
+    materialIds: string[];
+    anchor?: string;
+    sessionId?: string;
+    topic?: string;
+    tags?: string[];
+  }) => EchoArtifact;
+  updateArtifact: (
+    id: string,
+    updates: Partial<Pick<EchoArtifact, 'content' | 'contentEn' | 'topic' | 'tags'>>
+  ) => void;
+  deleteArtifact: (id: string) => void;
+  getArtifact: (id: string) => EchoArtifact | undefined;
 
   // Session Memory operations
   saveSessionMemory: (params: {
@@ -146,9 +168,14 @@ function toEchoArtifact(a: LoroArtifact): EchoArtifact {
   return {
     id: a.id,
     content: a.content,
+    contentEn: a.contentEn,
     materialIds: a.materialIds,
     anchor: a.anchor,
+    sessionId: a.sessionId,
+    topic: a.topic,
+    tags: a.tags,
     createdAt: a.createdAt,
+    updatedAt: a.updatedAt,
   };
 }
 
@@ -368,25 +395,35 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     return loro ? toRawMaterial(loro) : undefined;
   },
 
-  saveArtifact: (content, materialIds, anchor) => {
+  saveArtifact: (params) => {
     const id = crypto.randomUUID();
     const createdAt = Date.now();
 
     const artifact: EchoArtifact = {
       id,
-      content,
-      materialIds,
-      anchor,
+      content: params.content,
+      contentEn: params.contentEn,
+      materialIds: params.materialIds,
+      anchor: params.anchor,
+      sessionId: params.sessionId,
+      topic: params.topic,
+      tags: params.tags,
       createdAt,
+      updatedAt: createdAt,
     };
 
     // Save to Loro (will persist to IndexedDB)
     loroAddArtifact({
       id,
-      content,
-      materialIds,
-      anchor,
+      content: params.content,
+      contentEn: params.contentEn,
+      materialIds: params.materialIds,
+      anchor: params.anchor,
+      sessionId: params.sessionId,
+      topic: params.topic,
+      tags: params.tags,
       createdAt,
+      updatedAt: createdAt,
     });
 
     // Update Zustand state
@@ -394,7 +431,56 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
       artifacts: [artifact, ...state.artifacts],
     }));
 
+    // Generate embedding asynchronously (don't block UI)
+    getEmbedding(id, params.content).catch((error) => {
+      console.warn('Failed to generate embedding for artifact:', id, error);
+    });
+
     return artifact;
+  },
+
+  updateArtifact: (id, updates) => {
+    // Update in Loro
+    loroUpdateArtifact(id, updates);
+
+    // Update Zustand state
+    set((state) => ({
+      artifacts: state.artifacts.map((a) =>
+        a.id === id ? { ...a, ...updates, updatedAt: Date.now() } : a
+      ),
+    }));
+
+    // If content changed, regenerate embedding
+    if (updates.content !== undefined) {
+      getEmbedding(id, updates.content).catch((error) => {
+        console.warn('Failed to regenerate embedding for artifact:', id, error);
+      });
+    }
+  },
+
+  deleteArtifact: (id) => {
+    // Delete from Loro
+    loroDeleteArtifact(id);
+
+    // Update Zustand state
+    set((state) => ({
+      artifacts: state.artifacts.filter((a) => a.id !== id),
+    }));
+
+    // Delete embedding
+    deleteEmbedding(id).catch((error) => {
+      console.warn('Failed to delete embedding for artifact:', id, error);
+    });
+  },
+
+  getArtifact: (id) => {
+    // Try Zustand first (faster)
+    const local = get().artifacts.find((a) => a.id === id);
+    if (local) return local;
+
+    // Fallback to Loro
+    const loro = loroGetArtifact(id);
+    return loro ? toEchoArtifact(loro) : undefined;
   },
 
   saveSessionMemory: (params) => {

@@ -234,3 +234,97 @@ export async function getAllEmbeddings(
 
   return embeddings;
 }
+
+// ============ Artifact Search Functions ============
+
+/**
+ * Search artifacts by semantic similarity to query
+ */
+export async function searchArtifacts(
+  query: string,
+  artifacts: Array<{ id: string; content: string }>,
+  topK = 10
+): Promise<Array<{ id: string; score: number }>> {
+  // Get query embedding
+  const queryEmb = await embed(query);
+
+  // Get or generate embeddings for all artifacts
+  const results: Array<{ id: string; score: number }> = [];
+
+  for (const artifact of artifacts) {
+    const artifactEmb = await getEmbedding(artifact.id, artifact.content);
+    const score = cosineSimilarity(queryEmb, artifactEmb);
+    results.push({ id: artifact.id, score });
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results.slice(0, topK);
+}
+
+/**
+ * Find artifacts similar to a given artifact
+ */
+export async function findSimilarArtifacts(
+  artifactId: string,
+  artifacts: Array<{ id: string; content: string }>,
+  topK = 5
+): Promise<Array<{ id: string; score: number }>> {
+  // Get the target artifact's embedding
+  const targetArtifact = artifacts.find((a) => a.id === artifactId);
+  if (!targetArtifact) {
+    return [];
+  }
+
+  const targetEmb = await getEmbedding(artifactId, targetArtifact.content);
+
+  // Calculate similarity with all other artifacts
+  const results: Array<{ id: string; score: number }> = [];
+
+  for (const artifact of artifacts) {
+    if (artifact.id === artifactId) continue; // Skip self
+
+    const artifactEmb = await getEmbedding(artifact.id, artifact.content);
+    const score = cosineSimilarity(targetEmb, artifactEmb);
+    results.push({ id: artifact.id, score });
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results.slice(0, topK);
+}
+
+/**
+ * Combined search across materials and artifacts
+ * Returns results from both pools with source type indicated
+ */
+export async function searchAll(
+  query: string,
+  materials: Array<{ id: string; content: string }>,
+  artifacts: Array<{ id: string; content: string }>,
+  topK = 10
+): Promise<Array<{ id: string; score: number; type: 'material' | 'artifact' }>> {
+  const queryEmb = await embed(query);
+  const results: Array<{ id: string; score: number; type: 'material' | 'artifact' }> = [];
+
+  // Search materials
+  for (const material of materials) {
+    const emb = await getEmbedding(material.id, material.content);
+    const score = cosineSimilarity(queryEmb, emb);
+    results.push({ id: material.id, score, type: 'material' });
+  }
+
+  // Search artifacts
+  for (const artifact of artifacts) {
+    const emb = await getEmbedding(artifact.id, artifact.content);
+    const score = cosineSimilarity(queryEmb, emb);
+    results.push({ id: artifact.id, score, type: 'artifact' });
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results.slice(0, topK);
+}

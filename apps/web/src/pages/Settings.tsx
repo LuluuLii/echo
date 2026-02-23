@@ -23,6 +23,16 @@ import {
   requestPermission,
 } from '../lib/icloud';
 import { useMaterialsStore } from '../lib/store/materials';
+import { useUserStore, type ProficiencyLevel } from '../lib/store/user';
+import {
+  LearningProfileSection,
+  ActiveProviderSection,
+  CloudAPISection,
+  OllamaSection,
+  WebLLMSection,
+  TranslationSection,
+  ICloudSyncSection,
+} from './Components';
 
 type CloudProvider = 'openai' | 'anthropic' | 'gemini';
 type ActiveProviderType = 'cloud' | 'local' | 'edge' | 'template';
@@ -31,7 +41,7 @@ export function Settings() {
   const [config, setConfig] = useState<LLMConfig | null>(null);
   const [statuses, setStatuses] = useState<Map<string, ProviderStatus>>(new Map());
   const [testing, setTesting] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; error?: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; error?: string; latencyMs?: number }>>({});
 
   // Cloud provider form state
   const [selectedCloudProvider, setSelectedCloudProvider] = useState<CloudProvider>('openai');
@@ -46,7 +56,7 @@ export function Settings() {
   const [useCustomOllamaModel, setUseCustomOllamaModel] = useState(false);
 
   // WebLLM state
-  const [webllmModel, setWebllmModel] = useState(DEFAULT_MODELS.webllm);
+  const [webllmModel, setWebllmModel] = useState<string>(DEFAULT_MODELS.webllm);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadStatus, setDownloadStatus] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -56,7 +66,7 @@ export function Settings() {
   const [autoFallback, setAutoFallback] = useState(true);
 
   // Translation provider setting
-  const [translationProvider, setTranslationProvider] = useState<'active' | string>('active');
+  const [translationProvider, setTranslationProvider] = useState<string>('active');
 
   // iCloud sync state
   const [icloudSupported] = useState(isFileSystemAccessSupported());
@@ -70,6 +80,22 @@ export function Settings() {
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(isAutoSyncEnabled());
 
   const { reload: reloadStore } = useMaterialsStore();
+  const {
+    profile,
+    learningState,
+    hasProfile,
+    createProfile,
+    updateLearningSettings,
+    updatePreferences,
+  } = useUserStore();
+
+  // Profile form state
+  const [profileTargetLanguage, setProfileTargetLanguage] = useState('en');
+  const [profileNativeLanguage, setProfileNativeLanguage] = useState('zh');
+  const [profileProficiencyLevel, setProfileProficiencyLevel] = useState<ProficiencyLevel>('B1');
+  const [profileTopics, setProfileTopics] = useState('');
+  const [profileGoals, setProfileGoals] = useState('');
+  const [profileSaved, setProfileSaved] = useState(false);
 
   // Initialize
   useEffect(() => {
@@ -104,7 +130,7 @@ export function Settings() {
         setOllamaUrl(cfg.providers.ollama.baseUrl || 'http://localhost:11434');
         const savedOllamaModel = cfg.providers.ollama.model || DEFAULT_MODELS.ollama;
         setOllamaModel(savedOllamaModel);
-        const isOllamaCustom = !PROVIDER_INFO.ollama.models.includes(savedOllamaModel);
+        const isOllamaCustom = !(PROVIDER_INFO.ollama.models as readonly string[]).includes(savedOllamaModel);
         setUseCustomOllamaModel(isOllamaCustom);
       }
       if (cfg.providers.webllm) {
@@ -121,6 +147,15 @@ export function Settings() {
       }
     }
     init();
+
+    // Load profile if exists
+    if (profile) {
+      setProfileTargetLanguage(profile.learning.targetLanguage);
+      setProfileNativeLanguage(profile.learning.nativeLanguage);
+      setProfileProficiencyLevel(profile.learning.proficiencyLevel);
+      setProfileTopics(profile.preferences.topics?.join(', ') || '');
+      setProfileGoals(profile.preferences.learningGoals?.join(', ') || '');
+    }
 
     // Load iCloud status
     async function loadICloudStatus() {
@@ -143,8 +178,7 @@ export function Settings() {
       setCloudApiKey(providerConfig.apiKey || '');
       const savedModel = providerConfig.model || DEFAULT_MODELS[selectedCloudProvider];
       setCloudModel(savedModel);
-      // Check if the saved model is a custom one (not in the predefined list)
-      const isCustom = !PROVIDER_INFO[selectedCloudProvider].models.includes(savedModel);
+      const isCustom = !(PROVIDER_INFO[selectedCloudProvider].models as readonly string[]).includes(savedModel);
       setUseCustomModel(isCustom);
       if ('baseUrl' in providerConfig) {
         setCloudBaseUrl(providerConfig.baseUrl || '');
@@ -159,18 +193,18 @@ export function Settings() {
     }
   }, [selectedCloudProvider, config]);
 
+  // ============ Handlers ============
+
   const handleTestCloud = async () => {
     setTesting(selectedCloudProvider);
     const service = getLLMService();
 
-    // Save config first
     const providerConfig = selectedCloudProvider === 'openai'
       ? { apiKey: cloudApiKey, baseUrl: cloudBaseUrl || undefined, model: cloudModel }
       : { apiKey: cloudApiKey, model: cloudModel };
 
     await service.configureProvider(selectedCloudProvider, providerConfig);
 
-    // Test connection
     const result = await service.testConnection(selectedCloudProvider);
     setTestResults((prev) => ({ ...prev, [selectedCloudProvider]: result }));
     setStatuses(service.getAllStatuses());
@@ -208,7 +242,6 @@ export function Settings() {
       return;
     }
 
-    // Set progress callback
     webllmProvider.onProgressUpdate = (progress, status) => {
       setDownloadProgress(progress);
       setDownloadStatus(status);
@@ -312,7 +345,7 @@ export function Settings() {
 
     if (result.success) {
       setLastSyncTime(Date.now());
-      reloadStore(); // Reload Zustand store with new data
+      reloadStore();
       setSyncSuccess('Restored from iCloud');
       setTimeout(() => setSyncSuccess(null), 3000);
     } else {
@@ -330,7 +363,7 @@ export function Settings() {
 
     if (result.success) {
       setLastSyncTime(Date.now());
-      reloadStore(); // Reload Zustand store with merged data
+      reloadStore();
       const msg = result.newMaterials && result.newMaterials > 0
         ? `Synced (${result.newMaterials} new materials)`
         : 'Synced successfully';
@@ -350,13 +383,27 @@ export function Settings() {
     setAutoSyncEnabled(enabled);
   };
 
-  const formatLastSync = (timestamp: number | null): string => {
-    if (!timestamp) return 'Never';
-    const diff = Date.now() - timestamp;
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
-    return new Date(timestamp).toLocaleDateString();
+  const handleSaveProfile = () => {
+    const learning = {
+      targetLanguage: profileTargetLanguage,
+      nativeLanguage: profileNativeLanguage,
+      proficiencyLevel: profileProficiencyLevel,
+    };
+
+    const preferences = {
+      topics: profileTopics.split(',').map(t => t.trim()).filter(Boolean),
+      learningGoals: profileGoals.split(',').map(g => g.trim()).filter(Boolean),
+    };
+
+    if (hasProfile()) {
+      updateLearningSettings(learning);
+      updatePreferences(preferences);
+    } else {
+      createProfile(learning, preferences);
+    }
+
+    setProfileSaved(true);
+    setTimeout(() => setProfileSaved(false), 2000);
   };
 
   const getStatusIcon = (providerId: string) => {
@@ -365,33 +412,6 @@ export function Settings() {
     if (status.ready) return '✅';
     if (status.error) return '❌';
     return '⚪';
-  };
-
-  const getTestResultDisplay = (providerId: string) => {
-    const result = testResults[providerId];
-    if (!result) return null;
-    if (result.success) {
-      return (
-        <div className="flex items-center gap-2">
-          <span className="text-green-600 text-sm font-medium">Connected</span>
-          {result.latencyMs && (
-            <span className="text-echo-hint text-xs">({result.latencyMs}ms)</span>
-          )}
-        </div>
-      );
-    }
-    return null; // Error will be shown in a separate block
-  };
-
-  const getTestErrorDisplay = (providerId: string) => {
-    const result = testResults[providerId];
-    if (!result || result.success) return null;
-    return (
-      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-        <p className="text-red-700 text-sm font-medium mb-1">Connection Failed</p>
-        <p className="text-red-600 text-sm">{result.error}</p>
-      </div>
-    );
   };
 
   if (!config) {
@@ -405,472 +425,97 @@ export function Settings() {
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-semibold text-echo-text mb-2">Settings</h1>
-      <p className="text-echo-muted mb-6">Configure AI providers for activation cards and conversations.</p>
+      <p className="text-echo-muted mb-6">Configure your learning profile and AI providers.</p>
 
-      {/* Active Provider Section - At Top */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-echo-text">Active Provider</h2>
-          <button
-            onClick={handleSaveActiveProvider}
-            className="px-4 py-2 bg-echo-text text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
-          >
-            Save
-          </button>
-        </div>
+      <LearningProfileSection
+        learningState={learningState}
+        targetLanguage={profileTargetLanguage}
+        setTargetLanguage={setProfileTargetLanguage}
+        nativeLanguage={profileNativeLanguage}
+        setNativeLanguage={setProfileNativeLanguage}
+        proficiencyLevel={profileProficiencyLevel}
+        setProficiencyLevel={setProfileProficiencyLevel}
+        topics={profileTopics}
+        setTopics={setProfileTopics}
+        goals={profileGoals}
+        setGoals={setProfileGoals}
+        saved={profileSaved}
+        onSave={handleSaveProfile}
+      />
 
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {([
-            { type: 'cloud', label: 'Cloud API', icon: '☁️' },
-            { type: 'local', label: 'Ollama', icon: '🖥️' },
-            { type: 'edge', label: 'On-Device', icon: '📱' },
-            { type: 'template', label: 'No AI', icon: '📝' },
-          ] as const).map(({ type, label, icon }) => (
-            <button
-              key={type}
-              onClick={() => setActiveType(type)}
-              className={`flex items-center gap-2 p-3 rounded-xl border transition-colors ${
-                activeType === type
-                  ? 'border-echo-text bg-gray-50 text-echo-text'
-                  : 'border-gray-200 text-echo-muted hover:border-gray-300'
-              }`}
-            >
-              <span>{icon}</span>
-              <span className="font-medium">{label}</span>
-            </button>
-          ))}
-        </div>
+      <ActiveProviderSection
+        activeType={activeType}
+        setActiveType={setActiveType}
+        autoFallback={autoFallback}
+        setAutoFallback={setAutoFallback}
+        onSave={handleSaveActiveProvider}
+      />
 
-        <label className="flex items-center gap-2 text-sm text-echo-muted">
-          <input
-            type="checkbox"
-            checked={autoFallback}
-            onChange={(e) => setAutoFallback(e.target.checked)}
-            className="w-4 h-4"
-          />
-          Auto-fallback when provider unavailable
-        </label>
-      </section>
+      <CloudAPISection
+        selectedProvider={selectedCloudProvider}
+        setSelectedProvider={setSelectedCloudProvider}
+        apiKey={cloudApiKey}
+        setApiKey={setCloudApiKey}
+        baseUrl={cloudBaseUrl}
+        setBaseUrl={setCloudBaseUrl}
+        model={cloudModel}
+        setModel={setCloudModel}
+        useCustomModel={useCustomModel}
+        setUseCustomModel={setUseCustomModel}
+        testing={testing}
+        testResults={testResults}
+        getStatusIcon={getStatusIcon}
+        onTest={handleTestCloud}
+      />
 
-      {/* Cloud API Section */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <h2 className="text-lg font-medium text-echo-text mb-4">Cloud API</h2>
+      <OllamaSection
+        url={ollamaUrl}
+        setUrl={setOllamaUrl}
+        model={ollamaModel}
+        setModel={setOllamaModel}
+        useCustomModel={useCustomOllamaModel}
+        setUseCustomModel={setUseCustomOllamaModel}
+        testing={testing}
+        testResult={testResults.ollama}
+        statusIcon={getStatusIcon('ollama')}
+        onTest={handleTestOllama}
+      />
 
-        {/* Provider selector */}
-        <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">Provider</label>
-          <div className="flex gap-2">
-            {(['openai', 'anthropic', 'gemini'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setSelectedCloudProvider(p)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedCloudProvider === p
-                    ? 'bg-echo-text text-white'
-                    : 'bg-gray-100 text-echo-muted hover:bg-gray-200'
-                }`}
-              >
-                {getStatusIcon(p)} {PROVIDER_INFO[p].name}
-              </button>
-            ))}
-          </div>
-        </div>
+      <WebLLMSection
+        model={webllmModel}
+        setModel={setWebllmModel}
+        downloadProgress={downloadProgress}
+        downloadStatus={downloadStatus}
+        isDownloading={isDownloading}
+        statusIcon={getStatusIcon('webllm')}
+        onDownload={handleDownloadWebLLM}
+      />
 
-        {/* API Key */}
-        <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">API Key</label>
-          <input
-            type="password"
-            value={cloudApiKey}
-            onChange={(e) => setCloudApiKey(e.target.value)}
-            placeholder={`Enter your ${PROVIDER_INFO[selectedCloudProvider].name} API key`}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
-          />
-        </div>
+      <TranslationSection
+        provider={translationProvider}
+        setProvider={setTranslationProvider}
+        onSave={handleSaveTranslationProvider}
+      />
 
-        {/* Model selector */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm text-echo-muted">Model</label>
-            <label className="flex items-center gap-2 text-sm text-echo-hint cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useCustomModel}
-                onChange={(e) => {
-                  setUseCustomModel(e.target.checked);
-                  if (!e.target.checked) {
-                    setCloudModel(DEFAULT_MODELS[selectedCloudProvider]);
-                  }
-                }}
-                className="w-3.5 h-3.5"
-              />
-              Custom model
-            </label>
-          </div>
-          {useCustomModel ? (
-            <input
-              type="text"
-              value={cloudModel}
-              onChange={(e) => setCloudModel(e.target.value)}
-              placeholder="e.g., anthropic/claude-3.5-sonnet, openai/gpt-4o"
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
-            />
-          ) : (
-            <select
-              value={cloudModel}
-              onChange={(e) => setCloudModel(e.target.value)}
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-            >
-              {PROVIDER_INFO[selectedCloudProvider].models.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          )}
-          {useCustomModel && selectedCloudProvider === 'openai' && (
-            <p className="text-echo-hint text-xs mt-2">
-              For OpenRouter, use format like <code className="bg-gray-100 px-1 rounded">anthropic/claude-3.5-sonnet</code>
-            </p>
-          )}
-        </div>
+      <ICloudSyncSection
+        supported={icloudSupported}
+        connected={icloudConnected}
+        folderName={icloudFolderName}
+        hasPermission={icloudHasPermission}
+        lastSyncTime={lastSyncTime}
+        isSyncing={isSyncing}
+        syncError={syncError}
+        syncSuccess={syncSuccess}
+        autoSyncEnabled={autoSyncEnabled}
+        onConnect={handleConnectICloud}
+        onDisconnect={handleDisconnectICloud}
+        onRequestPermission={handleRequestPermission}
+        onSyncNow={handleMergeFromICloud}
+        onPushToICloud={handleSyncToICloud}
+        onRestoreFromICloud={handleRestoreFromICloud}
+        onToggleAutoSync={handleToggleAutoSync}
+      />
 
-        {/* Base URL (OpenAI only) */}
-        {selectedCloudProvider === 'openai' && (
-          <div className="mb-4">
-            <label className="block text-sm text-echo-muted mb-2">
-              Base URL <span className="text-echo-hint">(optional, for proxies)</span>
-            </label>
-            <input
-              type="text"
-              value={cloudBaseUrl}
-              onChange={(e) => setCloudBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
-            />
-          </div>
-        )}
-
-        {/* Test button */}
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleTestCloud}
-            disabled={!cloudApiKey || testing === selectedCloudProvider}
-            className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            {testing === selectedCloudProvider ? 'Testing...' : 'Test Connection'}
-          </button>
-          {getTestResultDisplay(selectedCloudProvider)}
-        </div>
-
-        {/* Error display */}
-        {getTestErrorDisplay(selectedCloudProvider)}
-
-        {/* Help text for CORS - only show when there's a CORS-related error */}
-        {selectedCloudProvider === 'openai' &&
-         testResults[selectedCloudProvider]?.error?.includes('CORS') && (
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-800 text-xs font-medium mb-1">Browser Access (CORS)</p>
-            <p className="text-blue-700 text-xs">
-              This service doesn't allow direct browser access. Try these CORS-enabled alternatives:
-            </p>
-            <ul className="text-blue-700 text-xs mt-1 ml-4 list-disc">
-              <li><a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="underline">OpenRouter</a> - Base URL: <code className="bg-blue-100 px-1 rounded">https://openrouter.ai/api/v1</code></li>
-              <li><a href="https://api.together.xyz" target="_blank" rel="noopener noreferrer" className="underline">Together AI</a> - Base URL: <code className="bg-blue-100 px-1 rounded">https://api.together.xyz/v1</code></li>
-            </ul>
-          </div>
-        )}
-      </section>
-
-      {/* Local Server Section */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <h2 className="text-lg font-medium text-echo-text mb-4">
-          {getStatusIcon('ollama')} Local Server (Ollama)
-        </h2>
-
-        <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">Server URL</label>
-          <input
-            type="text"
-            value={ollamaUrl}
-            onChange={(e) => setOllamaUrl(e.target.value)}
-            placeholder="http://localhost:11434"
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
-          />
-        </div>
-
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-sm text-echo-muted">Model</label>
-            <label className="flex items-center gap-2 text-sm text-echo-hint cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useCustomOllamaModel}
-                onChange={(e) => {
-                  setUseCustomOllamaModel(e.target.checked);
-                  if (!e.target.checked) {
-                    setOllamaModel(DEFAULT_MODELS.ollama);
-                  }
-                }}
-                className="w-3.5 h-3.5"
-              />
-              Custom model
-            </label>
-          </div>
-          {useCustomOllamaModel ? (
-            <input
-              type="text"
-              value={ollamaModel}
-              onChange={(e) => setOllamaModel(e.target.value)}
-              placeholder="e.g., llama3:8b, mistral:7b"
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text"
-            />
-          ) : (
-            <select
-              value={ollamaModel}
-              onChange={(e) => setOllamaModel(e.target.value)}
-              className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-            >
-              {PROVIDER_INFO.ollama.models.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleTestOllama}
-            disabled={testing === 'ollama'}
-            className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            {testing === 'ollama' ? 'Testing...' : 'Test Connection'}
-          </button>
-          {getTestResultDisplay('ollama')}
-        </div>
-
-        {/* Error display */}
-        {getTestErrorDisplay('ollama')}
-
-        <p className="text-echo-hint text-xs mt-3">
-          Run <code className="bg-gray-100 px-1 rounded">ollama serve</code> locally to use this option.
-        </p>
-      </section>
-
-      {/* On-Device Model Section */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <h2 className="text-lg font-medium text-echo-text mb-4">
-          {getStatusIcon('webllm')} On-Device Model (WebLLM)
-        </h2>
-
-        <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">Model</label>
-          <select
-            value={webllmModel}
-            onChange={(e) => setWebllmModel(e.target.value)}
-            disabled={isDownloading}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-          >
-            {PROVIDER_INFO.webllm.models.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Download progress */}
-        {(isDownloading || downloadProgress > 0) && (
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-echo-muted">{downloadStatus}</span>
-              <span className="text-echo-text">{downloadProgress}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-echo-text h-2 rounded-full transition-all duration-300"
-                style={{ width: `${downloadProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <button
-          onClick={handleDownloadWebLLM}
-          disabled={isDownloading || downloadProgress === 100}
-          className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-        >
-          {downloadProgress === 100
-            ? 'Downloaded'
-            : isDownloading
-              ? 'Downloading...'
-              : `Download Model (${webllmModel.includes('SmolLM2') ? '~250MB' : '~400MB'})`}
-        </button>
-
-        <p className="text-echo-hint text-xs mt-3">
-          Runs entirely in your browser using WebGPU. Requires a modern browser with WebGPU support.
-        </p>
-      </section>
-
-      {/* Translation Settings */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-medium text-echo-text">Translation</h2>
-          <button
-            onClick={handleSaveTranslationProvider}
-            className="px-4 py-2 bg-echo-text text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
-          >
-            Save
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm text-echo-muted mb-2">
-            Translation Provider
-          </label>
-          <select
-            value={translationProvider}
-            onChange={(e) => setTranslationProvider(e.target.value)}
-            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:border-echo-text text-echo-text bg-white"
-          >
-            <option value="active">Use Active Provider</option>
-            <optgroup label="Cloud Providers">
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="gemini">Google Gemini</option>
-            </optgroup>
-            <optgroup label="Local">
-              <option value="ollama">Ollama</option>
-              <option value="webllm">On-Device (WebLLM)</option>
-            </optgroup>
-          </select>
-          <p className="text-echo-hint text-xs mt-2">
-            Choose which provider to use for translating materials to English.
-            {translationProvider !== 'active' && (
-              <span className="text-amber-600">
-                {' '}Make sure this provider is configured and ready.
-              </span>
-            )}
-          </p>
-        </div>
-      </section>
-
-      {/* iCloud Sync Section */}
-      <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-50 mb-6">
-        <h2 className="text-lg font-medium text-echo-text mb-4">
-          ☁️ iCloud Sync
-        </h2>
-
-        {!icloudSupported ? (
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
-            <p className="text-amber-800 text-sm">
-              iCloud sync is not supported in this browser.
-              Please use Chrome, Edge, or Safari 15.2+ on macOS.
-            </p>
-          </div>
-        ) : !icloudConnected ? (
-          <div className="space-y-4">
-            <p className="text-echo-muted text-sm">
-              Connect to an iCloud Drive folder to sync your materials across devices.
-            </p>
-            <button
-              onClick={handleConnectICloud}
-              className="px-4 py-2 bg-echo-text text-white rounded-xl text-sm font-medium hover:bg-gray-700 transition-colors"
-            >
-              Connect to iCloud Folder
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Connection status */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-echo-text text-sm font-medium">
-                  {icloudHasPermission ? '✅' : '⚠️'} Connected to: {icloudFolderName}
-                </p>
-                <p className="text-echo-hint text-xs mt-1">
-                  Last sync: {formatLastSync(lastSyncTime)}
-                </p>
-              </div>
-              <button
-                onClick={handleDisconnectICloud}
-                className="text-echo-hint text-sm hover:text-red-500 transition-colors"
-              >
-                Disconnect
-              </button>
-            </div>
-
-            {/* Permission warning */}
-            {!icloudHasPermission && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-amber-700 text-sm mb-2">
-                  Permission expired. Click to re-authorize.
-                </p>
-                <button
-                  onClick={handleRequestPermission}
-                  className="text-amber-700 text-sm font-medium underline"
-                >
-                  Grant Permission
-                </button>
-              </div>
-            )}
-
-            {/* Sync buttons */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={handleMergeFromICloud}
-                disabled={isSyncing || !icloudHasPermission}
-                className="px-4 py-2 bg-echo-text text-white rounded-xl text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50"
-              >
-                {isSyncing ? 'Syncing...' : 'Sync Now'}
-              </button>
-              <button
-                onClick={handleSyncToICloud}
-                disabled={isSyncing || !icloudHasPermission}
-                className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-              >
-                Push to iCloud
-              </button>
-              <button
-                onClick={handleRestoreFromICloud}
-                disabled={isSyncing || !icloudHasPermission}
-                className="px-4 py-2 bg-gray-100 text-echo-text rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
-              >
-                Restore from iCloud
-              </button>
-            </div>
-
-            {/* Auto-sync toggle */}
-            <label className="flex items-center gap-2 text-sm text-echo-muted cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoSyncEnabled}
-                onChange={(e) => handleToggleAutoSync(e.target.checked)}
-                disabled={!icloudHasPermission}
-                className="w-4 h-4"
-              />
-              Auto-sync every 5 minutes
-            </label>
-
-            {/* Success message */}
-            {syncSuccess && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-green-700 text-sm">✓ {syncSuccess}</p>
-              </div>
-            )}
-
-            {/* Error message */}
-            {syncError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-red-700 text-sm">✗ {syncError}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        <p className="text-echo-hint text-xs mt-4">
-          Sync uses Loro CRDT to merge changes automatically.
-          Embeddings are rebuilt locally after sync.
-        </p>
-      </section>
-
-      {/* Info */}
       <p className="text-echo-hint text-sm text-center">
         Settings are saved locally in your browser.
       </p>
