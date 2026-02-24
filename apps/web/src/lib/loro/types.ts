@@ -170,3 +170,45 @@ export interface LoroVocabularyRecord {
   lastUsed?: number;
   userMarked?: string;
 }
+
+// ============ Projects ============
+
+/**
+ * Project stored in Loro (synced)
+ */
+export interface LoroProject {
+  id: string;
+  name: string;
+  description?: string;
+  type: string;            // ProjectType
+  status: string;          // ProjectStatus
+  topics: string;          // JSON: string[]
+  materialIds: string;     // JSON: string[]
+  artifactIds: string;     // JSON: string[]
+  sessionIds: string;      // JSON: string[]
+  progress: string;        // JSON: ProjectProgress
+  color?: string;
+  icon?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Project Task stored in Loro (synced)
+ */
+export interface LoroProjectTask {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  priority: string;        // TaskPriority
+  status: string;          // TaskStatus
+  materialIds: string;     // JSON: string[]
+  artifactId?: string;
+  sessionId?: string;
+  suggestions?: string;    // JSON: string[]
+  dueAt?: number;
+  completedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}

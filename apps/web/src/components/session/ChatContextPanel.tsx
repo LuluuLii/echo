@@ -1,11 +1,19 @@
-import { useState } from 'react';
-import { type RawMaterial } from '../../lib/store/materials';
+import { useState, useEffect, useMemo } from 'react';
+import { useMaterialsStore, type RawMaterial } from '../../lib/store/materials';
+import { useVocabularyStore } from '../../lib/store/vocabulary';
 
 interface CardData {
   emotionalAnchor: string;
   livedExperience: string;
   expressions: string[];
   invitation: string;
+}
+
+interface VocabSuggestion {
+  term: string;
+  passiveCount: number;
+  lastSeen: number;
+  exampleContext: string;
 }
 
 interface ChatContextPanelProps {
@@ -20,8 +28,46 @@ export function ChatContextPanel({
   onExpressionClick,
 }: ChatContextPanelProps) {
   const [showContext, setShowContext] = useState(true);
-  const [expandedSection, setExpandedSection] = useState<'card' | 'materials' | null>('card');
+  const [expandedSection, setExpandedSection] = useState<'card' | 'materials' | 'vocab' | 'artifacts' | null>('card');
   const [hoveredMaterialId, setHoveredMaterialId] = useState<string | null>(null);
+  const [vocabSuggestions, setVocabSuggestions] = useState<VocabSuggestion[]>([]);
+
+  const { artifacts } = useMaterialsStore();
+  const { getRecommendedToActivate, init, initialized } = useVocabularyStore();
+
+  // Get relevant artifacts (those that share materials with current session, or recent ones)
+  const relevantArtifacts = useMemo(() => {
+    const materialIds = new Set(sourceMaterials.map((m) => m.id));
+
+    // First, find artifacts that share materials
+    const related = artifacts.filter((a) =>
+      a.materialIds.some((id) => materialIds.has(id))
+    );
+
+    // If we have related artifacts, show them; otherwise show recent ones
+    if (related.length > 0) {
+      return related.slice(0, 5);
+    }
+
+    // Show most recent 5 artifacts
+    return [...artifacts]
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 5);
+  }, [artifacts, sourceMaterials]);
+
+  // Load vocabulary suggestions
+  useEffect(() => {
+    if (!initialized) {
+      init();
+    }
+  }, [initialized, init]);
+
+  useEffect(() => {
+    if (initialized) {
+      const suggestions = getRecommendedToActivate(5);
+      setVocabSuggestions(suggestions);
+    }
+  }, [initialized, getRecommendedToActivate]);
 
   const hoveredMaterial = hoveredMaterialId
     ? sourceMaterials.find((m) => m.id === hoveredMaterialId)
@@ -63,6 +109,30 @@ export function ChatContextPanel({
             >
               Raw Materials ({sourceMaterials.length})
             </button>
+            {vocabSuggestions.length > 0 && (
+              <button
+                onClick={() => setExpandedSection(expandedSection === 'vocab' ? null : 'vocab')}
+                className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  expandedSection === 'vocab'
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-gray-100 text-echo-muted hover:bg-gray-200'
+                }`}
+              >
+                Try These ({vocabSuggestions.length})
+              </button>
+            )}
+            {relevantArtifacts.length > 0 && (
+              <button
+                onClick={() => setExpandedSection(expandedSection === 'artifacts' ? null : 'artifacts')}
+                className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                  expandedSection === 'artifacts'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-gray-100 text-echo-muted hover:bg-gray-200'
+                }`}
+              >
+                Past Expressions ({relevantArtifacts.length})
+              </button>
+            )}
           </>
         )}
       </div>
@@ -152,10 +222,76 @@ export function ChatContextPanel({
             </div>
           )}
 
+          {expandedSection === 'vocab' && vocabSuggestions.length > 0 && (
+            <div className="p-4">
+              <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">
+                Words to Try
+              </p>
+              <p className="text-echo-muted text-xs mb-3">
+                You've seen these words but haven't used them yet. Try incorporating them in your expression!
+              </p>
+              <div className="space-y-2">
+                {vocabSuggestions.map((vocab) => (
+                  <div
+                    key={vocab.term}
+                    className="p-3 bg-amber-50 rounded-lg border border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors"
+                    onClick={() => onExpressionClick(vocab.term)}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-echo-text text-sm font-medium">{vocab.term}</span>
+                      <span className="text-echo-hint text-xs">
+                        seen {vocab.passiveCount}x
+                      </span>
+                    </div>
+                    {vocab.exampleContext && (
+                      <p className="text-echo-muted text-xs line-clamp-2 italic">
+                        "{vocab.exampleContext}"
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {expandedSection === 'artifacts' && relevantArtifacts.length > 0 && (
+            <div className="p-4">
+              <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">
+                Your Past Expressions
+              </p>
+              <p className="text-echo-muted text-xs mb-3">
+                Draw inspiration from what you've expressed before.
+              </p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {relevantArtifacts.map((artifact) => (
+                  <div
+                    key={artifact.id}
+                    className="p-3 bg-green-50 rounded-lg border border-green-100"
+                  >
+                    <p className="text-echo-text text-sm line-clamp-3 leading-relaxed">
+                      {artifact.content}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-echo-hint text-xs">
+                      {artifact.anchor && (
+                        <span className="italic truncate max-w-[150px]">{artifact.anchor}</span>
+                      )}
+                      <span>
+                        {new Date(artifact.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {expandedSection === null && (
             <div className="p-3 text-center">
               <p className="text-echo-hint text-xs">
-                Click "Activation Card" or "Raw Materials" above to view context
+                Click a tab above to view context
               </p>
             </div>
           )}

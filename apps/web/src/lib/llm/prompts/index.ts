@@ -18,3 +18,19 @@ export {
   getRandomFallback,
   FALLBACK_RESPONSES,
 } from './echo-companion';
+
+export {
+  buildTranslatePrompt,
+  buildHintsPrompt,
+  buildDictionaryPrompt,
+  getToolPrompt,
+  type SessionToolType,
+} from './session-tools';
+
+export {
+  buildFeedbackPrompt,
+  buildContinuePrompt,
+  buildExpressionCheckPrompt,
+  getCreationPrompt,
+  type CreationAction,
+} from './creation-mode';

@@ -19,6 +19,8 @@ export type {
   LoroGrowthEvent,
   LoroUserUtterance,
   LoroVocabularyRecord,
+  LoroProject,
+  LoroProjectTask,
 } from './types';
 
 // Materials
@@ -87,3 +89,19 @@ export {
   getVocabularyByType,
   updateVocabularyMarking,
 } from './vocabulary';
+
+// Projects
+export {
+  addProject,
+  updateProject,
+  deleteProject,
+  getProject,
+  getAllProjects,
+  getProjectsByStatus,
+  addTask,
+  updateTask,
+  deleteTask,
+  getTask,
+  getProjectTasks,
+  getPendingTasks,
+} from './projects';

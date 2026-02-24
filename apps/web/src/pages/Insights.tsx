@@ -1,16 +1,35 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useMaterialsStore } from '../lib/store/materials';
+import { useVocabularyStore } from '../lib/store/vocabulary';
 import { SessionHistory } from '../components/SessionHistory';
 import { TerritoryMap } from '../components/TerritoryMap';
 import type { TerritoryCluster } from '../lib/territory';
+import type { VocabularyInsight } from '@echo/core/models';
 
 type ViewMode = 'territory' | 'stats';
 
 export function Insights() {
   const { materials, artifacts, sessionMemories, getMaterial } = useMaterialsStore();
+  const { init, initialized, generateInsight } = useVocabularyStore();
   const [viewMode, setViewMode] = useState<ViewMode>('territory');
   const [selectedCluster, setSelectedCluster] = useState<TerritoryCluster | null>(null);
   const [expandedArtifact, setExpandedArtifact] = useState<string | null>(null);
+  const [vocabInsight, setVocabInsight] = useState<VocabularyInsight | null>(null);
+
+  // Initialize vocabulary store
+  useEffect(() => {
+    if (!initialized) {
+      init();
+    }
+  }, [initialized, init]);
+
+  // Generate vocabulary insight
+  useEffect(() => {
+    if (initialized) {
+      const insight = generateInsight();
+      setVocabInsight(insight);
+    }
+  }, [initialized, generateInsight]);
 
   // Calculate some basic stats
   const totalMaterials = materials.length;
@@ -230,6 +249,93 @@ export function Insights() {
           <div>
             <h2 className="text-lg font-medium text-echo-text mb-4">Session History</h2>
             <SessionHistory limit={5} showViewAll={true} filterStatus="all" />
+          </div>
+
+          {/* Vocabulary Progress */}
+          <div>
+            <h2 className="text-lg font-medium text-echo-text mb-4">Vocabulary Progress</h2>
+            {vocabInsight && vocabInsight.stats.totalPassive > 0 ? (
+              <div className="space-y-4">
+                {/* Vocab Stats */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-50 text-center">
+                    <p className="text-2xl font-semibold text-echo-text">{vocabInsight.stats.totalPassive}</p>
+                    <p className="text-echo-hint text-xs mt-1">Seen</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-50 text-center">
+                    <p className="text-2xl font-semibold text-amber-600">{vocabInsight.stats.totalActive}</p>
+                    <p className="text-echo-hint text-xs mt-1">Used</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-50 text-center">
+                    <p className="text-2xl font-semibold text-green-600">{vocabInsight.stats.totalMastered}</p>
+                    <p className="text-echo-hint text-xs mt-1">Mastered</p>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-50 text-center">
+                    <p className="text-2xl font-semibold text-echo-text">{Math.round(vocabInsight.stats.activationRate * 100)}%</p>
+                    <p className="text-echo-hint text-xs mt-1">Activation</p>
+                  </div>
+                </div>
+
+                {/* Recommended to Activate */}
+                {vocabInsight.recommendedToActivate.length > 0 && (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-50 p-4">
+                    <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">Words to Try</p>
+                    <p className="text-echo-muted text-sm mb-3">
+                      You've seen these words but haven't used them yet.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {vocabInsight.recommendedToActivate.slice(0, 10).map((rec) => (
+                        <div
+                          key={rec.term}
+                          className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-lg text-sm cursor-pointer hover:bg-amber-100 transition-colors"
+                          title={rec.exampleContext || `Seen ${rec.passiveCount} times`}
+                        >
+                          {rec.term}
+                          <span className="text-amber-500 text-xs ml-1">({rec.passiveCount})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recent Progress */}
+                {(vocabInsight.recentProgress.newlyActivated.length > 0 || vocabInsight.recentProgress.newlyMastered.length > 0) && (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-50 p-4">
+                    <p className="text-echo-hint text-xs uppercase tracking-wide mb-3">This Week</p>
+                    {vocabInsight.recentProgress.newlyActivated.length > 0 && (
+                      <div className="mb-3">
+                        <p className="text-echo-muted text-xs mb-2">Newly used:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {vocabInsight.recentProgress.newlyActivated.map((term) => (
+                            <span key={term} className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-xs">
+                              {term}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {vocabInsight.recentProgress.newlyMastered.length > 0 && (
+                      <div>
+                        <p className="text-echo-muted text-xs mb-2">Newly mastered:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {vocabInsight.recentProgress.newlyMastered.map((term) => (
+                            <span key={term} className="px-2 py-1 bg-green-50 text-green-600 rounded text-xs">
+                              {term}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-50 text-center">
+                <p className="text-echo-muted">
+                  Vocabulary tracking will appear as you collect materials and express yourself.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

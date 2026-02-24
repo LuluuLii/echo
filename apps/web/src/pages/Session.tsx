@@ -8,6 +8,8 @@ import { generateActivationCard } from '../lib/activation-templates';
 import { saveStreamSnapshot, clearStreamSnapshot, type StreamSnapshot } from '../lib/stream-memory';
 import { getLLMService } from '../lib/llm';
 import { buildEchoMessages, getRandomFallback } from '../lib/llm/prompts/echo-companion';
+import { getToolPrompt, type SessionToolType } from '../lib/llm/prompts/session-tools';
+import { getCreationPrompt, type CreationAction } from '../lib/llm/prompts/creation-mode';
 import { scheduleBackgroundExtraction } from '../lib/background-extraction';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
@@ -18,6 +20,7 @@ import {
 } from '../components/session';
 
 type SessionPhase = 'topic-input' | 'activation-ready' | 'chat';
+type SessionMode = 'dialog' | 'creation';
 
 export function Session() {
   const navigate = useNavigate();
@@ -51,6 +54,9 @@ export function Session() {
   const [isSearching, setIsSearching] = useState(false);
   const [modelProgress, setModelProgress] = useState(0);
   const [modelStatus, setModelStatus] = useState('');
+
+  // Mode state
+  const [sessionMode, setSessionMode] = useState<SessionMode>('dialog');
 
   // Chat state
   const getInitialMessages = (): Message[] => {
@@ -380,6 +386,12 @@ export function Session() {
       materialIds: sourceMaterials.map((m) => m.id),
     });
 
+    // In creation mode, don't auto-respond - user controls when to get feedback
+    if (sessionMode === 'creation') {
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const llmService = getLLMService();
 
@@ -522,6 +534,90 @@ export function Session() {
     setGeneratedCard(null);
   };
 
+  const handleToolRequest = async (tool: SessionToolType, context: string) => {
+    if (isLoading || !context.trim()) return;
+
+    setIsLoading(true);
+
+    try {
+      const llmService = getLLMService();
+      await llmService.waitForInit();
+
+      const activeProvider = llmService.getActiveProvider();
+      if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
+        // Show fallback message for tools
+        const toolFallbacks: Record<SessionToolType, string> = {
+          translate: 'Translation requires an AI provider. Please configure one in Settings.',
+          hints: 'Expression hints require an AI provider. Please configure one in Settings.',
+          dictionary: 'Dictionary lookup requires an AI provider. Please configure one in Settings.',
+        };
+        setMessages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), role: 'echo', content: toolFallbacks[tool] },
+        ]);
+        return;
+      }
+
+      const toolMessages = getToolPrompt(tool, context);
+      const reply = await llmService.chat(toolMessages);
+
+      // Add tool response as a special echo message
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'echo', content: reply },
+      ]);
+    } catch (error) {
+      console.error(`Tool request failed (${tool}):`, error);
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'echo', content: 'Sorry, I couldn\'t process that request. Please try again.' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreationAction = async (action: CreationAction, content: string) => {
+    if (isLoading || !content.trim()) return;
+
+    setIsLoading(true);
+
+    try {
+      const llmService = getLLMService();
+      await llmService.waitForInit();
+
+      const activeProvider = llmService.getActiveProvider();
+      if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
+        const actionFallbacks: Record<CreationAction, string> = {
+          feedback: 'Feedback requires an AI provider. Please configure one in Settings.',
+          continue: 'Continue suggestions require an AI provider. Please configure one in Settings.',
+          check: 'Expression check requires an AI provider. Please configure one in Settings.',
+        };
+        setMessages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), role: 'echo', content: actionFallbacks[action] },
+        ]);
+        return;
+      }
+
+      const actionMessages = getCreationPrompt(action, content, sourceMaterials);
+      const reply = await llmService.chat(actionMessages);
+
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'echo', content: reply },
+      ]);
+    } catch (error) {
+      console.error(`Creation action failed (${action}):`, error);
+      setMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: 'echo', content: 'Sorry, I couldn\'t process that request. Please try again.' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // ============ Render ============
 
   if (isComplete) {
@@ -593,9 +689,13 @@ export function Session() {
       sourceMaterials={sourceMaterials}
       starterPrompts={starterPrompts}
       hasUserMessages={hasUserMessages}
+      sessionMode={sessionMode}
+      onModeChange={setSessionMode}
       onSend={handleSend}
       onSaveEcho={handleSaveEcho}
       onExit={handleExit}
+      onToolRequest={handleToolRequest}
+      onCreationAction={handleCreationAction}
     />
   );
 }

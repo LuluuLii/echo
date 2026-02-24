@@ -110,3 +110,24 @@ export type {
 export {
   calculateVocabularyStatus,
 } from './vocabulary';
+
+// Project
+export type {
+  ProjectType,
+  ProjectStatus,
+  TaskPriority,
+  TaskStatus,
+  ProjectTask,
+  ProjectProgress,
+  Project,
+  CreateProjectInput,
+  UpdateProjectInput,
+  CreateTaskInput,
+  UpdateTaskInput,
+} from './project';
+
+export {
+  createDefaultProgress,
+  calculateCompletionPercent,
+  isProjectOnTrack,
+} from './project';

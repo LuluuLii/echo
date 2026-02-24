@@ -19,8 +19,8 @@ export function Layout() {
               <NavLink to="/" current={location.pathname === '/'}>
                 Today
               </NavLink>
-              <NavLink to="/practice" current={location.pathname === '/practice'}>
-                Practice
+              <NavLink to="/studio" current={location.pathname === '/studio' || location.pathname === '/session'}>
+                Studio
               </NavLink>
               <NavLink to="/insights" current={location.pathname === '/insights'}>
                 Insights
