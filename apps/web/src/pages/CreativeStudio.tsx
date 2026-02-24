@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectsStore } from '../lib/store/projects';
+import { EmptyState } from '../components/EmptyState';
+import { toast } from '../components/Toast';
 import type { Project, ProjectTask, ProjectType } from '@echo/core/models';
 import { calculateCompletionPercent } from '@echo/core/models';
 
@@ -43,13 +45,14 @@ export function CreativeStudio() {
     if (!newProjectName.trim()) return;
 
     const color = PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)];
-    createProject({
+    const project = createProject({
       name: newProjectName.trim(),
       description: newProjectDesc.trim() || undefined,
       type: newProjectType,
       color,
     });
 
+    toast.success(`Project "${project.name}" created`);
     setNewProjectName('');
     setNewProjectDesc('');
     setShowNewProject(false);
@@ -256,7 +259,12 @@ export function CreativeStudio() {
           {/* Active Projects */}
           {activeProjects.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {activeProjects.map((project) => (
+              {activeProjects.map((project) => {
+                const handleDelete = () => {
+                  deleteProject(project.id);
+                  toast.success(`"${project.name}" deleted`);
+                };
+                return (
                 <div
                   key={project.id}
                   className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
@@ -313,7 +321,7 @@ export function CreativeStudio() {
                         Continue
                       </button>
                       <button
-                        onClick={() => deleteProject(project.id)}
+                        onClick={handleDelete}
                         className="px-3 py-2 text-echo-hint hover:text-red-500 transition-colors"
                         title="Delete project"
                       >
@@ -322,13 +330,20 @@ export function CreativeStudio() {
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           ) : (
             !showNewProject && (
-              <div className="text-center py-12">
-                <p className="text-echo-muted mb-4">No projects yet. Create one to get started!</p>
-              </div>
+              <EmptyState
+                icon="📁"
+                title="No projects yet"
+                description="Create a project to organize your practice sessions and track progress toward your goals."
+                action={{
+                  label: 'Create Project',
+                  onClick: () => setShowNewProject(true),
+                }}
+              />
             )
           )}
         </div>
@@ -390,9 +405,15 @@ export function CreativeStudio() {
               })}
             </div>
           ) : (
-            <div className="text-center py-12">
-              <p className="text-echo-muted mb-4">No pending tasks. Create a project and add tasks to get started!</p>
-            </div>
+            <EmptyState
+              icon="✅"
+              title="All caught up!"
+              description="No pending tasks. Create a project and add tasks, or start a free expression session."
+              action={{
+                label: 'Free Expression',
+                onClick: handleQuickSession,
+              }}
+            />
           )}
         </div>
       )}

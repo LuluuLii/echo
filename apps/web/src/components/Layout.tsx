@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { SyncPanel } from './SyncPanel';
+import { ToastContainer } from './Toast';
 
 export function Layout() {
   const location = useLocation();
@@ -59,6 +60,9 @@ export function Layout() {
 
       {/* Sync Panel */}
       <SyncPanel open={syncPanelOpen} onClose={() => setSyncPanelOpen(false)} />
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }

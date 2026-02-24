@@ -10,6 +10,7 @@ import { getLLMService } from '../lib/llm';
 import { buildEchoMessages, getRandomFallback } from '../lib/llm/prompts/echo-companion';
 import { getToolPrompt, type SessionToolType } from '../lib/llm/prompts/session-tools';
 import { getCreationPrompt, type CreationAction } from '../lib/llm/prompts/creation-mode';
+import { toast } from '../components/Toast';
 import { scheduleBackgroundExtraction } from '../lib/background-extraction';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import {
@@ -500,8 +501,8 @@ export function Session() {
     }
 
     clearStreamSnapshot();
+    toast.success('Expression saved successfully');
     setIsComplete(true);
-    setTimeout(() => navigate('/'), 2000);
   };
 
   const handleExit = () => {
@@ -623,8 +624,43 @@ export function Session() {
   if (isComplete) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <h1 className="text-3xl font-semibold text-echo-accent mb-3">Saved</h1>
-        <p className="text-echo-muted italic">This will become part of your story.</p>
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+          <span className="text-3xl">✓</span>
+        </div>
+        <h1 className="text-2xl font-semibold text-echo-text mb-2">Expression Saved</h1>
+        <p className="text-echo-muted mb-8">Your thoughts have been captured.</p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setIsComplete(false);
+              sessionIdRef.current = crypto.randomUUID();
+              sessionCreatedAtRef.current = Date.now();
+              sessionMemoryIdRef.current = null;
+              sessionSavedRef.current = false;
+              setMessages([]);
+              setInputText('');
+              // Stay in chat with same context
+              if (generatedCard) {
+                setMessages([{ id: crypto.randomUUID(), role: 'echo', content: generatedCard.invitation }]);
+              }
+            }}
+            className="px-6 py-2.5 bg-echo-text text-white rounded-lg font-medium hover:bg-gray-700 transition-colors"
+          >
+            Continue Practicing
+          </button>
+          <button
+            onClick={() => navigate('/insights')}
+            className="px-6 py-2.5 bg-gray-100 text-echo-text rounded-lg font-medium hover:bg-gray-200 transition-colors"
+          >
+            View Insights
+          </button>
+          <button
+            onClick={() => navigate('/')}
+            className="px-6 py-2.5 text-echo-muted hover:text-echo-text transition-colors"
+          >
+            Home
+          </button>
+        </div>
       </div>
     );
   }

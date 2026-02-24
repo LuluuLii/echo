@@ -32,32 +32,42 @@ export function ChatInput({
     setShowTools(false);
   };
 
+  const hasInput = inputText.trim().length > 0;
+
   return (
     <div className="space-y-2">
       {/* Tools Toolbar */}
       {showTools && (
-        <div className="flex gap-2 px-1">
-          <button
-            onClick={() => handleToolClick('translate')}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
-          >
-            <span>Translate</span>
-          </button>
-          <button
-            onClick={() => handleToolClick('hints')}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50"
-          >
-            <span>Hints</span>
-          </button>
-          <button
-            onClick={() => handleToolClick('dictionary')}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
-          >
-            <span>Dictionary</span>
-          </button>
+        <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+          <p className="text-echo-hint text-xs mb-2">
+            {hasInput ? 'Get help with your text:' : 'Type something first, then use these tools:'}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleToolClick('translate')}
+              disabled={isLoading || !hasInput}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>🌐</span>
+              <span>Translate</span>
+            </button>
+            <button
+              onClick={() => handleToolClick('hints')}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-amber-200 text-amber-600 rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-50"
+            >
+              <span>💡</span>
+              <span>Get Hints</span>
+            </button>
+            <button
+              onClick={() => handleToolClick('dictionary')}
+              disabled={isLoading || !hasInput}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-green-200 text-green-600 rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>📖</span>
+              <span>Dictionary</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -66,10 +76,10 @@ export function ChatInput({
         {/* Tools Toggle */}
         <button
           onClick={() => setShowTools(!showTools)}
-          className={`p-2 rounded-lg transition-colors ${
+          className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
             showTools
-              ? 'bg-gray-200 text-echo-text'
-              : 'text-echo-muted hover:bg-gray-100'
+              ? 'bg-echo-text text-white'
+              : 'text-echo-muted hover:bg-gray-100 hover:text-echo-text'
           }`}
           title="Expression tools"
         >
@@ -83,7 +93,7 @@ export function ChatInput({
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth={2}
-              d="M13 10V3L4 14h7v7l9-11h-7z"
+              d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
             />
           </svg>
         </button>
@@ -96,12 +106,17 @@ export function ChatInput({
           className="flex-1 resize-none focus:outline-none text-echo-text py-2 px-1 max-h-32"
           rows={1}
         />
+
         <button
           onClick={onSend}
           disabled={!inputText.trim() || isLoading}
-          className="px-6 py-2 bg-echo-text text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors"
+          className="px-5 py-2 bg-echo-text text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition-colors flex-shrink-0"
         >
-          Send
+          {isLoading ? (
+            <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+          ) : (
+            'Send'
+          )}
         </button>
       </div>
     </div>
