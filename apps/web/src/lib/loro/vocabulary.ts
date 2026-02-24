@@ -104,6 +104,34 @@ export function getSessionUtterances(sessionId: string): LoroUserUtterance[] {
 }
 
 /**
+ * Get all user utterances
+ */
+export function getAllUserUtterances(): LoroUserUtterance[] {
+  const utterances = getUserUtterancesMap();
+  const result: LoroUserUtterance[] = [];
+
+  for (const [, value] of utterances.entries()) {
+    if (!(value instanceof LoroMap)) continue;
+    const u = value;
+
+    result.push({
+      id: u.get('id') as string,
+      sessionId: u.get('sessionId') as string,
+      content: u.get('content') as string,
+      contentEn: u.get('contentEn') as string | undefined,
+      turnIndex: u.get('turnIndex') as number,
+      replyTo: u.get('replyTo') as string | undefined,
+      topic: u.get('topic') as string | undefined,
+      materialIds: u.get('materialIds') as string | undefined,
+      vocabularyExtracted: u.get('vocabularyExtracted') as boolean,
+      createdAt: u.get('createdAt') as number,
+    });
+  }
+
+  return result.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
  * Get all unprocessed utterances (for vocabulary extraction)
  */
 export function getUnextractedUtterances(): LoroUserUtterance[] {

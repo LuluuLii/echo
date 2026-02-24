@@ -188,3 +188,78 @@ export function scheduleBackgroundExtraction(params: {
     }
   }, delay);
 }
+
+// ============ Passive Vocabulary Extraction (for Materials) ============
+
+// Queue for batch processing materials
+let materialExtractionQueue: Array<{ id: string; content: string }> = [];
+let isProcessingMaterials = false;
+
+/**
+ * Schedule passive vocabulary extraction for a material
+ * Uses queue to batch process and avoid overwhelming LLM
+ */
+export function schedulePassiveVocabularyExtraction(
+  materialId: string,
+  content: string,
+  delayMs: number = 3000
+): void {
+  // Add to queue
+  materialExtractionQueue.push({ id: materialId, content });
+
+  // Schedule processing if not already scheduled
+  if (!isProcessingMaterials) {
+    isProcessingMaterials = true;
+
+    setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(
+          () => {
+            processMaterialExtractionQueue().catch(console.error);
+          },
+          { timeout: 30000 }
+        );
+      } else {
+        processMaterialExtractionQueue().catch(console.error);
+      }
+    }, delayMs);
+  }
+}
+
+/**
+ * Process queued materials for passive vocabulary extraction
+ * Processes up to 3 at a time to balance speed and LLM load
+ */
+async function processMaterialExtractionQueue(): Promise<void> {
+  const queue = [...materialExtractionQueue];
+  materialExtractionQueue = [];
+  isProcessingMaterials = false;
+
+  if (queue.length === 0) return;
+
+  console.log(`[BackgroundExtraction] Processing ${queue.length} materials for passive vocabulary`);
+
+  // Process in batches of 3
+  const batchSize = 3;
+  for (let i = 0; i < queue.length; i += batchSize) {
+    const batch = queue.slice(i, i + batchSize);
+
+    // Process batch in parallel
+    await Promise.all(
+      batch.map(async ({ id, content }) => {
+        try {
+          await extractPassiveVocabulary(id, content);
+        } catch (error) {
+          console.error(`[BackgroundExtraction] Failed to extract passive vocab for ${id}:`, error);
+        }
+      })
+    );
+
+    // Small delay between batches to avoid overwhelming LLM
+    if (i + batchSize < queue.length) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  console.log(`[BackgroundExtraction] Completed passive vocabulary extraction for ${queue.length} materials`);
+}

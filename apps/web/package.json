@@ -12,6 +12,7 @@
   "dependencies": {
     "@echo/core": "workspace:*",
     "@mlc-ai/web-llm": "^0.2.80",
+    "compromise": "^14.14.5",
     "d3-array": "^3.2.4",
     "d3-contour": "^4.0.2",
     "d3-delaunay": "^6.0.4",

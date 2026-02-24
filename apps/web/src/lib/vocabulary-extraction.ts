@@ -2,9 +2,10 @@
  * Vocabulary Extraction Pipeline
  *
  * Extracts vocabulary (words, phrases, expressions, sentence patterns)
- * from text using LLM or simple heuristics.
+ * from text using LLM with local lemmatization via compromise.
  */
 
+import nlp from 'compromise';
 import { getLLMService } from './llm';
 import type { VocabularyTermType } from '@echo/core/models';
 
@@ -15,11 +16,80 @@ export interface ExtractedVocabulary {
   context: string;
 }
 
+// ============ Lemmatization (compromise) ============
+
 /**
- * LLM prompt for vocabulary extraction
+ * Lemmatize a term to its base form using compromise
  */
+function lemmatize(term: string): string {
+  const doc = nlp(term);
+
+  // Try verb → infinitive
+  const verbs = doc.verbs();
+  if (verbs.length > 0) {
+    const infinitive = verbs.toInfinitive().out('text');
+    if (infinitive) return infinitive.toLowerCase().trim();
+  }
+
+  // Try noun → singular
+  const nouns = doc.nouns();
+  if (nouns.length > 0) {
+    const singular = nouns.toSingular().out('text');
+    if (singular) return singular.toLowerCase().trim();
+  }
+
+  // Default: lowercase
+  return term.toLowerCase().trim();
+}
+
+/**
+ * Lemmatize a phrase (preserve structure, lemmatize key words)
+ */
+function lemmatizePhrase(phrase: string): string {
+  const doc = nlp(phrase);
+
+  // Convert verbs to infinitive form
+  doc.verbs().toInfinitive();
+
+  // Convert nouns to singular
+  doc.nouns().toSingular();
+
+  return doc.out('text').toLowerCase().trim();
+}
+
+// ============ Common Words Filter ============
+
+const COMMON_WORDS = new Set([
+  // Articles, pronouns, prepositions
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'can', 'must', 'shall', 'to', 'of', 'in',
+  'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
+  'during', 'before', 'after', 'above', 'below', 'between', 'under',
+  'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+  'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some',
+  'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+  'too', 'very', 'just', 'now', 'and', 'but', 'or', 'if', 'because',
+  'until', 'while', 'this', 'that', 'these', 'those', 'i', 'me', 'my',
+  'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'it',
+  'its', 'they', 'them', 'their', 'what', 'which', 'who', 'whom',
+  'about', 'up', 'down', 'out', 'off', 'over', 'also', 'well', 'back',
+  'being', 'both', 'come', 'even', 'find', 'first', 'get', 'give', 'go',
+  'going', 'good', 'great', 'know', 'last', 'like', 'little', 'long',
+  'look', 'made', 'make', 'many', 'much', 'new', 'old', 'one', 'part',
+  'people', 'place', 'right', 'say', 'see', 'take', 'think', 'time',
+  'two', 'use', 'want', 'way', 'work', 'world', 'year', 'years', 'thing',
+  'things', 'day', 'days', 'man', 'men', 'woman', 'women', 'life',
+]);
+
+function isCommonWord(word: string): boolean {
+  return COMMON_WORDS.has(word.toLowerCase());
+}
+
+// ============ LLM Extraction ============
+
 const EXTRACTION_PROMPT = `Extract important English vocabulary from the following text. Focus on:
-1. Words: Individual words that are intermediate to advanced level
+1. Words: Individual words that are intermediate to advanced level (skip basic words like "go", "make", "good")
 2. Phrases: Multi-word phrases (2-4 words) that are commonly used together
 3. Expressions: Idiomatic expressions or fixed phrases with special meaning
 4. Sentence Patterns: Common grammatical structures that can be reused
@@ -27,10 +97,9 @@ const EXTRACTION_PROMPT = `Extract important English vocabulary from the followi
 For each item, provide:
 - term: The exact form from the text
 - termType: "word", "phrase", "expression", or "sentence_pattern"
-- normalized: The base/dictionary form (lowercase, lemmatized)
-- context: A brief snippet showing how it's used
+- context: A brief snippet showing how it's used (10-20 words)
 
-Return a JSON array of objects. Only include vocabulary worth learning (skip common words like "the", "is", "have").
+Return a JSON array of objects. Only include vocabulary worth learning.
 If no significant vocabulary is found, return an empty array.
 
 Text to analyze:
@@ -41,7 +110,7 @@ Text to analyze:
 Return ONLY the JSON array, no explanation.`;
 
 /**
- * Extract vocabulary using LLM
+ * Extract vocabulary using LLM, with local lemmatization
  */
 export async function extractVocabularyWithLLM(
   text: string
@@ -51,8 +120,9 @@ export async function extractVocabularyWithLLM(
 
   const provider = llmService.getActiveProvider();
   if (!provider || !provider.isReady() || provider.id === 'template') {
-    // Fall back to simple extraction if no LLM available
-    return extractVocabularySimple(text);
+    // Fall back to local extraction if no LLM available
+    console.log('[VocabExtraction] No LLM available, using local extraction');
+    return extractVocabularyLocal(text);
   }
 
   try {
@@ -65,99 +135,172 @@ export async function extractVocabularyWithLLM(
     const jsonMatch = response.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       console.warn('[VocabExtraction] No JSON array found in response');
-      return [];
+      return extractVocabularyLocal(text);
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed)) {
-      return [];
+      return extractVocabularyLocal(text);
     }
 
-    // Validate and normalize results
+    // Validate and apply local lemmatization
     return parsed
       .filter(item =>
         item.term &&
         item.termType &&
         ['word', 'phrase', 'expression', 'sentence_pattern'].includes(item.termType)
       )
-      .map(item => ({
-        term: String(item.term),
-        termType: item.termType as VocabularyTermType,
-        normalized: String(item.normalized || item.term).toLowerCase().trim(),
-        context: String(item.context || ''),
-      }));
+      .map(item => {
+        const term = String(item.term);
+        const termType = item.termType as VocabularyTermType;
+
+        // Apply local lemmatization for accurate normalized form
+        const normalized = termType === 'word'
+          ? lemmatize(term)
+          : lemmatizePhrase(term);
+
+        return {
+          term,
+          termType,
+          normalized,
+          context: String(item.context || '').slice(0, 100),
+        };
+      });
   } catch (error) {
     console.error('[VocabExtraction] LLM extraction failed:', error);
-    return extractVocabularySimple(text);
+    return extractVocabularyLocal(text);
   }
 }
 
+// ============ Local Extraction (Fallback) ============
+
 /**
- * Simple vocabulary extraction without LLM
- * Uses basic heuristics to identify potentially interesting vocabulary
+ * Extract vocabulary locally using compromise (no LLM)
  */
-export function extractVocabularySimple(text: string): ExtractedVocabulary[] {
+export function extractVocabularyLocal(text: string): ExtractedVocabulary[] {
   const results: ExtractedVocabulary[] = [];
+  const doc = nlp(text);
+  const seen = new Set<string>();
 
-  // Common words to skip
-  const skipWords = new Set([
-    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'can', 'must', 'shall', 'to', 'of', 'in',
-    'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through',
-    'during', 'before', 'after', 'above', 'below', 'between', 'under',
-    'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
-    'why', 'how', 'all', 'each', 'few', 'more', 'most', 'other', 'some',
-    'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
-    'too', 'very', 's', 't', 'just', 'don', 'now', 'and', 'but', 'or',
-    'if', 'because', 'until', 'while', 'this', 'that', 'these', 'those',
-    'i', 'me', 'my', 'we', 'our', 'you', 'your', 'he', 'him', 'his',
-    'she', 'her', 'it', 'its', 'they', 'them', 'their', 'what', 'which',
-    'who', 'whom', 'about', 'up', 'down', 'out', 'off', 'over',
-  ]);
-
-  // Extract words (5+ characters, not in skip list)
-  const words = text.toLowerCase().match(/\b[a-z]{5,}\b/g) || [];
-  const uniqueWords = [...new Set(words)].filter(w => !skipWords.has(w));
-
-  for (const word of uniqueWords.slice(0, 10)) {
-    // Find context
-    const regex = new RegExp(`[^.]*\\b${word}\\b[^.]*\\.?`, 'i');
-    const contextMatch = text.match(regex);
-
-    results.push({
-      term: word,
-      termType: 'word',
-      normalized: word,
-      context: contextMatch ? contextMatch[0].trim().slice(0, 100) : '',
-    });
-  }
-
-  // Extract common phrases (preposition phrases, verb + adverb, etc.)
-  const phrasePatterns = [
-    /\b(take|make|have|get|give|put|keep|set|turn|bring|come|go)\s+(on|off|up|down|in|out|over|back|away|into|through)\b/gi,
-    /\b(in|on|at|for|with)\s+\w+\s+(of|to|for)\b/gi,
-    /\b(more|less|most|least)\s+\w+\s+than\b/gi,
-    /\b(as|so)\s+\w+\s+as\b/gi,
-  ];
-
-  for (const pattern of phrasePatterns) {
-    const matches = text.match(pattern) || [];
-    for (const match of matches.slice(0, 3)) {
-      const normalized = match.toLowerCase().trim();
-      if (!results.some(r => r.normalized === normalized)) {
-        results.push({
-          term: match,
-          termType: 'phrase',
-          normalized,
-          context: '',
-        });
-      }
+  // 1. Extract nouns (skip common ones)
+  const nouns = doc.nouns().out('array') as string[];
+  for (const noun of nouns) {
+    const normalized = lemmatize(noun);
+    if (normalized.length >= 4 && !isCommonWord(normalized) && !seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        term: noun,
+        termType: 'word',
+        normalized,
+        context: findContext(text, noun),
+      });
     }
   }
 
-  return results.slice(0, 15);
+  // 2. Extract verbs (skip common ones)
+  const verbs = doc.verbs().out('array') as string[];
+  for (const verb of verbs) {
+    const normalized = lemmatize(verb);
+    if (normalized.length >= 4 && !isCommonWord(normalized) && !seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        term: verb,
+        termType: 'word',
+        normalized,
+        context: findContext(text, verb),
+      });
+    }
+  }
+
+  // 3. Extract adjectives
+  const adjectives = doc.adjectives().out('array') as string[];
+  for (const adj of adjectives) {
+    const normalized = adj.toLowerCase().trim();
+    if (normalized.length >= 4 && !isCommonWord(normalized) && !seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        term: adj,
+        termType: 'word',
+        normalized,
+        context: findContext(text, adj),
+      });
+    }
+  }
+
+  // 4. Extract adverbs
+  const adverbs = doc.adverbs().out('array') as string[];
+  for (const adv of adverbs) {
+    const normalized = adv.toLowerCase().trim();
+    if (normalized.length >= 4 && !isCommonWord(normalized) && !seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        term: adv,
+        termType: 'word',
+        normalized,
+        context: findContext(text, adv),
+      });
+    }
+  }
+
+  // 5. Extract phrasal verbs (e.g., "pick up", "take off")
+  const phrasalVerbs = doc.match('#PhrasalVerb').out('array') as string[];
+  for (const pv of phrasalVerbs) {
+    const normalized = lemmatizePhrase(pv);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      results.push({
+        term: pv,
+        termType: 'phrase',
+        normalized,
+        context: findContext(text, pv),
+      });
+    }
+  }
+
+  // 6. Extract common phrase patterns
+  const phrasePatterns = [
+    '#Verb (on|off|up|down|in|out|over|back|away|into|through)',  // Phrasal verbs
+    'in #Noun of',  // in spite of, in terms of
+    'take #Noun into account',
+    'as #Adjective as',
+    'more #Adjective than',
+  ];
+
+  for (const pattern of phrasePatterns) {
+    try {
+      const matches = doc.match(pattern).out('array') as string[];
+      for (const match of matches) {
+        const normalized = lemmatizePhrase(match);
+        if (!seen.has(normalized) && match.split(' ').length >= 2) {
+          seen.add(normalized);
+          results.push({
+            term: match,
+            termType: 'phrase',
+            normalized,
+            context: findContext(text, match),
+          });
+        }
+      }
+    } catch {
+      // Pattern might not match, continue
+    }
+  }
+
+  // Limit results
+  return results.slice(0, 20);
 }
+
+/**
+ * Find context for a term in the original text
+ */
+function findContext(text: string, term: string): string {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`[^.]*\\b${escaped}\\b[^.]*\\.?`, 'i');
+  const match = text.match(regex);
+  return match ? match[0].trim().slice(0, 100) : '';
+}
+
+// ============ Batch Processing ============
 
 /**
  * Extract vocabulary from multiple texts in batch
@@ -181,33 +324,9 @@ export async function extractVocabularyBatch(
   return results;
 }
 
-/**
- * Process unextracted user utterances
- * Call this periodically (e.g., after session ends)
- */
-export async function processUnextractedUtterances(
-  utterances: Array<{ id: string; content: string }>,
-  onExtracted: (utteranceId: string, vocabulary: ExtractedVocabulary[]) => void
-): Promise<number> {
-  let processed = 0;
+// ============ Profile Insights Extraction ============
 
-  for (const utterance of utterances) {
-    try {
-      const vocabulary = await extractVocabularyWithLLM(utterance.content);
-      onExtracted(utterance.id, vocabulary);
-      processed++;
-    } catch (error) {
-      console.error(`[VocabExtraction] Failed for utterance ${utterance.id}:`, error);
-    }
-  }
-
-  return processed;
-}
-
-/**
- * Profile extraction prompt for discovering user insights
- */
-const PROFILE_EXTRACTION_PROMPT = `Analyze the following conversation messages and extract insights about the user.
+const PROFILE_EXTRACTION_PROMPT = `Analyze the following conversation messages and extract insights about the user's language learning.
 
 Focus on discovering:
 1. Strengths: Language skills they demonstrate well
@@ -218,7 +337,7 @@ Focus on discovering:
 
 For each insight, provide:
 - category: "strength", "weakness", "interest", "goal", or "habit"
-- content: A brief description
+- content: A brief description (1-2 sentences)
 - confidence: A number between 0 and 1
 
 Return a JSON array of insights. Only include confident observations (confidence >= 0.6).
@@ -250,7 +369,7 @@ export async function extractProfileInsights(
 
   const provider = llmService.getActiveProvider();
   if (!provider || !provider.isReady() || provider.id === 'template') {
-    return []; // No fallback for profile extraction
+    return []; // No fallback for profile extraction - requires LLM
   }
 
   try {

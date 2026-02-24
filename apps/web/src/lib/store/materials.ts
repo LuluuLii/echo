@@ -22,6 +22,7 @@ import {
 } from '../loro';
 import { getEmbedding } from '../embedding';
 import { deleteEmbedding } from '../db';
+import { schedulePassiveVocabularyExtraction } from '../background-extraction';
 
 export interface RawMaterial {
   id: string;
@@ -344,6 +345,12 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     getEmbedding(id, content).catch((error) => {
       console.warn('Failed to generate embedding for material:', id, error);
     });
+
+    // Schedule passive vocabulary extraction (background, low priority)
+    // Only for text materials with sufficient content
+    if (type === 'text' && content.length >= 50) {
+      schedulePassiveVocabularyExtraction(id, content);
+    }
   },
 
   updateMaterial: (id, content, note) => {

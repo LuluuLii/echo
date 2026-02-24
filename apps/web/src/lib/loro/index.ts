@@ -78,6 +78,7 @@ export {
   getUserUtterance,
   markUtteranceExtracted,
   getSessionUtterances,
+  getAllUserUtterances,
   getUnextractedUtterances,
   saveVocabularyRecord,
   getVocabularyRecord,
