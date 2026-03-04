@@ -10,7 +10,9 @@ import { getAllEmbeddings, cosineSimilarity } from './embedding';
 const labelCache = new Map<string, string>();
 
 // Cluster result cache key for IndexedDB
-const CLUSTER_CACHE_KEY = 'cluster-result-cache';
+// Increment version when label generation algorithm changes
+const CLUSTER_CACHE_VERSION = 2;
+const CLUSTER_CACHE_KEY = `cluster-result-cache-v${CLUSTER_CACHE_VERSION}`;
 
 /**
  * Generate a cache key from material IDs
@@ -255,17 +257,15 @@ async function generateClusterLabelWithLLM(
     const { getLLMService } = await import('./llm/service');
     const service = getLLMService();
 
-    if (!service.isInitialized()) {
-      console.log('[Clustering/Label] Initializing LLM service...');
-      await service.initialize();
-    }
+    // Wait for LLM service to fully initialize (like activation does)
+    await service.waitForInit();
 
     // Check if we have a real LLM provider (not just template)
     const activeProvider = service.getActiveProvider();
     console.log('[Clustering/Label] Active provider:', activeProvider?.name || 'none');
     console.log('[Clustering/Label] Provider ready:', activeProvider?.isReady() || false);
 
-    if (!activeProvider || !activeProvider.isReady()) {
+    if (!activeProvider || !activeProvider.isReady() || activeProvider.id === 'template') {
       console.log('[Clustering/Label] No LLM provider ready, using fallback keyword extraction');
       return generateFallbackLabel(contents);
     }
@@ -273,14 +273,32 @@ async function generateClusterLabelWithLLM(
     console.log('[Clustering/Label] Using LLM provider:', activeProvider.name);
 
     // Take samples - more for main clusters, fewer for sub-clusters
+    // Use more characters for Chinese text (each char ~1 token)
     const sampleCount = isSubCluster ? 3 : 5;
-    const sampleLength = isSubCluster ? 150 : 200;
+    const sampleLength = isSubCluster ? 300 : 500;
     const sample = contents
       .slice(0, sampleCount)
       .map(c => c.slice(0, sampleLength))
       .join('\n---\n');
 
-    const prompt = `Analyze these text samples and generate a precise, descriptive English topic label.
+    // Detect if content is primarily Chinese
+    const chineseCharCount = (sample.match(/[\u4e00-\u9fff]/g) || []).length;
+    const isChineseContent = chineseCharCount > sample.length * 0.3;
+
+    const prompt = isChineseContent
+      ? `分析以下文本样本，生成一个精确的主题标签。
+
+要求：
+- 2-5个词（中文或英文均可）
+- 要具体，不要笼统（避免"杂项"、"各种"、"综合"）
+- 抓住核心主题或话题
+- 用名词或名词短语
+
+文本样本：
+${sample}
+
+主题标签：`
+      : `Analyze these text samples and generate a precise, descriptive topic label.
 
 Requirements:
 - 2-4 words maximum
@@ -293,27 +311,34 @@ ${sample}
 
 Topic label:`;
 
-    console.log('[Clustering/Label] Sending prompt to LLM...');
+    console.log('[Clustering/Label] Sending prompt to LLM (Chinese:', isChineseContent, ')...');
     const result = await service.chat([{ role: 'user', content: prompt }], {
-      temperature: 0.2,
-      maxTokens: 15,
+      temperature: 0.3,
+      maxTokens: 50,  // Increased for Chinese labels
     });
     console.log('[Clustering/Label] LLM raw result:', result);
 
     // Clean up the result
     let label = result.trim()
-      .replace(/^["']|["']$/g, '')  // Remove quotes
-      .replace(/^(Topic|Label|Theme):\s*/i, '')  // Remove prefix
-      .replace(/\.$/, '')  // Remove trailing period
-      .slice(0, 30);
+      .replace(/^["'「」『』]/g, '')  // Remove quotes (including Chinese)
+      .replace(/["'「」『』]$/g, '')
+      .replace(/^(Topic|Label|Theme|主题|标签)[:：]\s*/i, '')  // Remove prefix
+      .replace(/[.。]$/, '')  // Remove trailing period
+      .slice(0, 40);  // Allow longer Chinese labels
 
     // Validate - if too generic or empty, use fallback
-    const genericLabels = ['general', 'various', 'mixed', 'miscellaneous', 'other', 'content', 'text'];
+    const genericLabels = [
+      'general', 'various', 'mixed', 'miscellaneous', 'other', 'content', 'text',
+      '杂项', '综合', '各种', '其他', '内容', '文本', '混合'
+    ];
     if (!label || genericLabels.some(g => label.toLowerCase().includes(g))) {
+      console.log('[Clustering/Label] Generic label detected, using fallback');
       const fallback = generateFallbackLabel(contents);
       labelCache.set(cacheKey, fallback);
       return fallback;
     }
+
+    console.log('[Clustering/Label] Final label:', label);
 
     // Cache the result
     labelCache.set(cacheKey, label);
@@ -339,21 +364,58 @@ const STOP_WORDS = new Set([
   'maybe', 'actually', 'probably', 'definitely', 'basically', 'literally',
 ]);
 
+// Chinese stop words
+const CHINESE_STOP_WORDS = new Set([
+  '的', '是', '在', '我', '有', '和', '就', '不', '人', '都', '一', '一个',
+  '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看',
+  '好', '自己', '这', '那', '她', '他', '它', '这个', '那个', '什么', '怎么',
+  '可以', '没', '了', '吗', '啊', '呢', '吧', '哦', '嗯', '但是', '因为',
+  '所以', '如果', '虽然', '还是', '或者', '而且', '然后', '这样', '那样',
+]);
+
 /**
  * Fallback label generation using improved keyword extraction
  */
 function generateFallbackLabel(contents: string[]): string {
   const allText = contents.join(' ');
 
-  // Extract meaningful words (nouns and key terms)
+  // Check if primarily Chinese
+  const chineseCharCount = (allText.match(/[\u4e00-\u9fff]/g) || []).length;
+  const isChineseContent = chineseCharCount > allText.length * 0.3;
+
+  if (isChineseContent) {
+    // Chinese text: extract 2-4 character words/phrases
+    const chineseWords = allText.match(/[\u4e00-\u9fff]{2,6}/g) || [];
+    const freq = new Map<string, number>();
+
+    chineseWords.forEach((word, idx) => {
+      if (!CHINESE_STOP_WORDS.has(word)) {
+        const positionBonus = 1 + (chineseWords.length - idx) / chineseWords.length;
+        freq.set(word, (freq.get(word) || 0) + positionBonus);
+      }
+    });
+
+    const topWords = Array.from(freq.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([word]) => word);
+
+    if (topWords.length === 0) {
+      return '未分类';
+    }
+
+    return topWords.slice(0, 2).join(' · ');
+  }
+
+  // English text: extract meaningful words
   const words = allText
-    .replace(/[^\w\s\u4e00-\u9fff]/g, ' ')  // Keep alphanumeric and Chinese
+    .replace(/[^\w\s]/g, ' ')
     .split(/\s+/)
     .filter((w) => {
       const lower = w.toLowerCase();
       return w.length > 3 &&
              !STOP_WORDS.has(lower) &&
-             !/^\d+$/.test(w);  // Not pure numbers
+             !/^\d+$/.test(w);
     });
 
   // Word frequency with position bonus (earlier = more important)

@@ -56,7 +56,9 @@ const DEFAULT_HEIGHT = 600;
 const PADDING = 50;
 
 // Territory cache key for IndexedDB
-const TERRITORY_CACHE_KEY = 'territory-result-cache';
+// Increment version when clustering/label algorithm changes
+const TERRITORY_CACHE_VERSION = 2;
+const TERRITORY_CACHE_KEY = `territory-result-cache-v${TERRITORY_CACHE_VERSION}`;
 
 /**
  * Generate cache key from materials
