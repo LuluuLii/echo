@@ -27,6 +27,10 @@ build/
 *.swo
 .DS_Store
 
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+
 # Expo
 *.jks
 *.p8

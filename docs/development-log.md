@@ -1,6 +1,6 @@
 # Echo Development Log
 
-> 最后更新: 2026-02-24 (iCloud 优先存储架构)
+> 最后更新: 2026-03-05 (iOS 原生开发启动)
 >
 > Claude Code Session: `2b82ed80-9de5-4080-b4ef-88dc28298990`
 > 对话记录: `~/.claude/projects/-Users-chenlu-Developer-Echo/2b82ed80-9de5-4080-b4ef-88dc28298990.jsonl`
@@ -22,7 +22,8 @@ Echo 是一个语言学习应用，核心理念是「激活」而非「教学」
 ```
 echo/
 ├── apps/
-│   ├── mobile/          # React Native Expo 骨架
+│   ├── ios/             # Swift 原生 iOS 应用
+│   │   └── Echo/        # Xcode 项目
 │   └── web/             # Vite + React Web 应用 (主要开发)
 ├── packages/
 │   └── core/            # 共享业务逻辑
@@ -128,11 +129,43 @@ echo/
 
 ### 未完成功能
 
-#### Mobile 端 ❌
-- [ ] 完整 UI 实现 (目前只有骨架)
-- [ ] expo-image-picker 图片选择
-- [ ] NativeWind 样式
-- [ ] 本地 SQLite 存储
+#### iOS 原生端 🚧 开发中
+
+**已完成**:
+- [x] Xcode 项目初始化 (SwiftUI)
+- [x] loro-swift 依赖配置
+- [x] 数据模型 (Material, ActivationCard, EchoSession)
+- [x] 基础 UI 架构 (Today / Library / Settings tabs)
+- [x] DataStore 服务 (iCloud Drive + 本地 JSON)
+- [x] SyncService 骨架 (Loro 集成占位)
+- [x] Share Extension 骨架 (单条分享)
+- [x] 批量导入 UI (快捷指令引导 / 文件导入 / 剪贴板)
+
+**待完成**:
+- [ ] App Groups 配置 (需 Apple Developer 付费账号)
+- [ ] Loro CRDT 实际集成
+- [ ] Echo Session 对话流程
+- [ ] LLM Provider 集成
+- [ ] 激活卡生成
+
+**⚠️ 备忘录导入方案待优化**:
+
+当前方案 (Share Extension) 只能单条分享，体验不佳。计划中的更好方案：
+
+| 方案 | 描述 | 状态 |
+|------|------|------|
+| **快捷指令批量导入** | 用户运行 Shortcut，一次性导出整个文件夹 | 🔜 待实现 |
+| **Mac Notes 数据库读取** | 直接读取 `~/Library/Group Containers/group.com.apple.notes/` SQLite | 🔜 待研究 |
+
+快捷指令方案流程:
+```
+备忘录 App → 快捷指令读取文件夹 → 导出 JSON → 保存到 iCloud Drive/Echo/ → Echo App 导入
+```
+
+Mac 数据库方案 (需要 Full Disk Access):
+```
+Mac 端工具 → 读取 NoteStore.sqlite → 解析 ZICNOTEDATA → 导出 JSON → iCloud 同步到 iOS
+```
 
 #### 高级功能
 - [ ] 语音输入/输出
@@ -145,9 +178,9 @@ echo/
 | 层 | 技术 | 状态 |
 |---|---|---|
 | Web | Vite + React + TailwindCSS | ✅ 可用 |
-| Mobile | React Native + Expo (SDK 54) | ⚠️ 骨架 |
+| iOS | Swift + SwiftUI | 🚧 开发中 |
 | UI (Web) | TailwindCSS + 自定义 Echo 主题 | ✅ 可用 |
-| UI (Mobile) | NativeWind | ❌ 待配置 |
+| UI (iOS) | SwiftUI 原生 | 🚧 开发中 |
 | 状态管理 | Zustand | ✅ 可用 |
 | 本地存储 | expo-sqlite + Drizzle ORM | ❌ 待实现 |
 | Backend | Node.js + Hono | ✅ 可用 |
@@ -217,6 +250,21 @@ pnpm dev:mobile
 |------|------|
 | `packages/core/models/*.ts` | 数据模型定义 |
 | `packages/core/agents/*.ts` | AI Prompt 模板 |
+
+### iOS 端
+
+| 文件 | 作用 |
+|------|------|
+| `apps/ios/Echo/Echo/EchoApp.swift` | App 入口 |
+| `apps/ios/Echo/Echo/ContentView.swift` | Tab 导航 |
+| `apps/ios/Echo/Echo/Views/TodayView.swift` | 今日激活卡页 |
+| `apps/ios/Echo/Echo/Views/LibraryView.swift` | 素材库页 |
+| `apps/ios/Echo/Echo/Views/ImportView.swift` | 导入备忘录页 |
+| `apps/ios/Echo/Echo/Models/*.swift` | 数据模型 |
+| `apps/ios/Echo/Echo/Services/DataStore.swift` | 数据存储 (iCloud) |
+| `apps/ios/Echo/Echo/Services/SyncService.swift` | 同步服务 |
+| `apps/ios/Echo/Echo/Services/NotesImporter.swift` | 备忘录导入 |
+| `apps/ios/Echo/EchoShareExtension/` | Share Extension |
 
 ## Git 提交历史
 
@@ -502,12 +550,16 @@ interface Project {
 
 ---
 
-### Web V1 完成后 → Mobile 端
+### iOS 原生开发 (当前进行中)
 
-- [ ] Mobile UI 完整实现
-- [ ] ONNX Runtime 端上 Embedding
-- [ ] iCloud 原生访问
-- [ ] Share Extension / 相机扫描
+- [x] Xcode 项目搭建 (SwiftUI)
+- [x] loro-swift 集成
+- [x] 基础 UI (Today / Library / Settings)
+- [x] 数据层 (iCloud Drive JSON 存储)
+- [ ] **备忘录批量导入** ⬅️ 需要更好方案
+- [ ] Echo Session 对话
+- [ ] LLM Provider 接入
+- [ ] Embedding 本地计算 (ONNX Runtime)
 - [ ] TestFlight 发布
 
 ---
