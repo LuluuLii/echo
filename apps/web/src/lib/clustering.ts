@@ -9,6 +9,58 @@ import { getAllEmbeddings, cosineSimilarity } from './embedding';
 // Label cache to avoid regenerating labels for same content
 const labelCache = new Map<string, string>();
 
+// Cluster result cache key for IndexedDB
+const CLUSTER_CACHE_KEY = 'cluster-result-cache';
+
+/**
+ * Generate a cache key from material IDs
+ */
+function getClusterCacheKey(materials: Array<{ id: string; content: string }>): string {
+  // Sort IDs for consistent key regardless of order
+  const ids = materials.map(m => m.id).sort().join(',');
+  // Include content hash to detect changes
+  const contentHash = materials.reduce((acc, m) => acc + m.content.length, 0);
+  return `${ids}:${contentHash}`;
+}
+
+/**
+ * Load cached cluster result from IndexedDB
+ */
+async function loadClusterCache(): Promise<{ key: string; result: ClusterResult } | null> {
+  try {
+    const { db } = await import('./db');
+    const cached = await db.meta.get(CLUSTER_CACHE_KEY);
+    if (cached?.value) {
+      console.log('[Clustering] Loaded cache from IndexedDB');
+      return JSON.parse(cached.value as string);
+    }
+  } catch (e) {
+    console.warn('[Clustering] Failed to load cache:', e);
+  }
+  return null;
+}
+
+/**
+ * Save cluster result to IndexedDB
+ */
+async function saveClusterCache(key: string, result: ClusterResult): Promise<void> {
+  try {
+    const { db } = await import('./db');
+    // Convert Map to array for JSON serialization
+    const serializable = {
+      key,
+      result: {
+        clusters: result.clusters,
+        materialClusterMap: Array.from(result.materialClusterMap.entries()),
+      },
+    };
+    await db.meta.put({ key: CLUSTER_CACHE_KEY, value: JSON.stringify(serializable) });
+    console.log('[Clustering] Saved cache to IndexedDB');
+  } catch (e) {
+    console.warn('[Clustering] Failed to save cache:', e);
+  }
+}
+
 /**
  * Generate a cache key from material contents
  */
@@ -29,6 +81,19 @@ function getLabelCacheKey(contents: string[]): string {
  */
 export function clearLabelCache(): void {
   labelCache.clear();
+}
+
+/**
+ * Clear the cluster result cache (call when materials are added/deleted)
+ */
+export async function clearClusterCache(): Promise<void> {
+  try {
+    const { db } = await import('./db');
+    await db.meta.delete(CLUSTER_CACHE_KEY);
+    console.log('[Clustering] Cache cleared from IndexedDB');
+  } catch (e) {
+    console.warn('[Clustering] Failed to clear cache:', e);
+  }
 }
 
 export interface Cluster {
@@ -191,15 +256,21 @@ async function generateClusterLabelWithLLM(
     const service = getLLMService();
 
     if (!service.isInitialized()) {
+      console.log('[Clustering/Label] Initializing LLM service...');
       await service.initialize();
     }
 
     // Check if we have a real LLM provider (not just template)
     const activeProvider = service.getActiveProvider();
+    console.log('[Clustering/Label] Active provider:', activeProvider?.name || 'none');
+    console.log('[Clustering/Label] Provider ready:', activeProvider?.isReady() || false);
+
     if (!activeProvider || !activeProvider.isReady()) {
-      console.log('[Clustering] No LLM provider ready, using fallback');
+      console.log('[Clustering/Label] No LLM provider ready, using fallback keyword extraction');
       return generateFallbackLabel(contents);
     }
+
+    console.log('[Clustering/Label] Using LLM provider:', activeProvider.name);
 
     // Take samples - more for main clusters, fewer for sub-clusters
     const sampleCount = isSubCluster ? 3 : 5;
@@ -222,10 +293,12 @@ ${sample}
 
 Topic label:`;
 
+    console.log('[Clustering/Label] Sending prompt to LLM...');
     const result = await service.chat([{ role: 'user', content: prompt }], {
       temperature: 0.2,
       maxTokens: 15,
     });
+    console.log('[Clustering/Label] LLM raw result:', result);
 
     // Clean up the result
     let label = result.trim()
@@ -338,9 +411,9 @@ async function generateClusterLabel(
  */
 export async function clusterMaterials(
   materials: Array<{ id: string; content: string }>,
-  options: { maxIterations?: number; forceK?: number } = {}
+  options: { maxIterations?: number; forceK?: number; skipCache?: boolean } = {}
 ): Promise<ClusterResult> {
-  const { maxIterations = 20, forceK } = options;
+  const { maxIterations = 20, forceK, skipCache = false } = options;
 
   if (materials.length === 0) {
     return { clusters: [], materialClusterMap: new Map() };
@@ -357,6 +430,23 @@ export async function clusterMaterials(
       clusters: [cluster],
       materialClusterMap: new Map([[materials[0].id, cluster.id]]),
     };
+  }
+
+  // Check cache from IndexedDB
+  const cacheKey = getClusterCacheKey(materials);
+  if (!skipCache) {
+    const cached = await loadClusterCache();
+    if (cached && cached.key === cacheKey) {
+      console.log('[Clustering] Using cached result from IndexedDB');
+      // Reconstruct Map from array
+      const materialClusterMap = new Map<string, string>(
+        cached.result.materialClusterMap as [string, string][]
+      );
+      return {
+        clusters: cached.result.clusters,
+        materialClusterMap,
+      };
+    }
   }
 
   // Get all embeddings
@@ -434,7 +524,12 @@ export async function clusterMaterials(
   // Sort clusters by size (largest first)
   clusters.sort((a, b) => b.materialIds.length - a.materialIds.length);
 
-  return { clusters, materialClusterMap };
+  const result = { clusters, materialClusterMap };
+
+  // Save to IndexedDB for persistence
+  await saveClusterCache(cacheKey, result);
+
+  return result;
 }
 
 /**

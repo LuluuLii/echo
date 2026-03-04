@@ -21,6 +21,7 @@ export function RawLibrary() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [clusterResult, setClusterResult] = useState<ClusterResult | null>(null);
   const [isClustering, setIsClustering] = useState(false);
+  const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
 
   // Translation state
   const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
@@ -389,6 +390,17 @@ export function RawLibrary() {
           <AddMaterialModal
             onClose={() => setShowAddModal(false)}
             onAdd={handleAddMaterial}
+            onOpenAppleNotes={() => {
+              setShowAddModal(false);
+              setShowAppleNotesImporter(true);
+            }}
+          />
+        )}
+
+        {showAppleNotesImporter && (
+          <AppleNotesImporter
+            onClose={() => setShowAppleNotesImporter(false)}
+            onImport={handleAppleNotesImport}
           />
         )}
 
@@ -459,17 +471,6 @@ export function RawLibrary() {
               </button>
             </div>
           )}
-          {/* Apple Notes Import (macOS only) */}
-          {navigator.platform.toLowerCase().includes('mac') && (
-            <button
-              onClick={() => setShowAppleNotesImporter(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-100 text-echo-muted rounded-lg hover:bg-gray-200 transition-colors"
-              title="Import from Apple Notes"
-            >
-              <span>🍎</span>
-              <span>Notes</span>
-            </button>
-          )}
           <button
             onClick={() => setShowAddModal(true)}
             className="bg-echo-text text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-700 transition-colors"
@@ -515,41 +516,123 @@ export function RawLibrary() {
 
       {/* Cluster View */}
       {viewMode === 'clusters' && (
-        <div className="space-y-6">
+        <div>
           {isClustering ? (
             <div className="text-center py-12">
+              <div className="w-8 h-8 border-2 border-echo-text border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-echo-muted">Analyzing your materials...</p>
             </div>
           ) : clusterResult && clusterResult.clusters.length > 0 ? (
-            clusterResult.clusters.map((cluster) => (
-              <div key={cluster.id} className="bg-white rounded-xl shadow-sm border border-gray-50 overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                  <h3 className="font-medium text-echo-text capitalize">
-                    {cluster.label}
-                  </h3>
-                  <p className="text-echo-hint text-xs mt-0.5">
-                    {cluster.materialIds.length} {cluster.materialIds.length === 1 ? 'material' : 'materials'}
-                  </p>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {cluster.materialIds.map((id) => {
-                    const material = materials.find((m) => m.id === id);
-                    if (!material) return null;
-                    return (
-                      <div
-                        key={id}
-                        onClick={() => setSelectedMaterial(material)}
-                        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                      >
-                        <p className="text-echo-text text-sm leading-relaxed line-clamp-2">
-                          {material.content}
-                        </p>
+            <>
+              {/* Cluster Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {clusterResult.clusters.map((cluster) => (
+                  <div
+                    key={cluster.id}
+                    onClick={() => setExpandedClusterId(cluster.id)}
+                    className="bg-white rounded-xl shadow-sm border border-gray-50 cursor-pointer hover:shadow-md hover:border-gray-100 transition-all flex flex-col overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                      <div className="flex items-start justify-between">
+                        <h3 className="font-medium text-echo-text capitalize line-clamp-1 flex-1">
+                          {cluster.label}
+                        </h3>
+                        <span className="ml-2 px-2 py-0.5 bg-white text-echo-muted text-xs rounded-full flex-shrink-0">
+                          {cluster.materialIds.length}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                    {/* Items */}
+                    <div className="flex-1 divide-y divide-gray-100">
+                      {cluster.materialIds.slice(0, 3).map((id) => {
+                        const material = materials.find((m) => m.id === id);
+                        if (!material) return null;
+                        return (
+                          <div key={id} className="px-4 py-3">
+                            <p className="text-echo-text text-sm leading-relaxed line-clamp-3">
+                              {material.content}
+                            </p>
+                          </div>
+                        );
+                      })}
+                      {cluster.materialIds.length > 3 && (
+                        <div className="px-4 py-2 text-center">
+                          <p className="text-echo-hint text-xs">
+                            +{cluster.materialIds.length - 3} more...
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))
+
+              {/* Expanded Cluster Modal */}
+              {expandedClusterId && (() => {
+                const cluster = clusterResult.clusters.find(c => c.id === expandedClusterId);
+                if (!cluster) return null;
+                return (
+                  <div
+                    className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-8"
+                    onClick={() => setExpandedClusterId(null)}
+                  >
+                    <div
+                      className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col"
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+                        <div>
+                          <h2 className="font-semibold text-echo-text capitalize">{cluster.label}</h2>
+                          <p className="text-echo-hint text-sm">
+                            {cluster.materialIds.length} {cluster.materialIds.length === 1 ? 'material' : 'materials'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setExpandedClusterId(null)}
+                          className="text-echo-hint hover:text-echo-text transition-colors text-xl"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {cluster.materialIds.map((id) => {
+                          const material = materials.find((m) => m.id === id);
+                          if (!material) return null;
+                          return (
+                            <div
+                              key={id}
+                              onClick={() => {
+                                setExpandedClusterId(null);
+                                setSelectedMaterial(material);
+                              }}
+                              className="p-4 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                            >
+                              <p className="text-echo-text text-sm leading-relaxed">
+                                {material.content}
+                              </p>
+                              {material.contentEn && material.contentEn !== material.content && (
+                                <p className="text-blue-600 text-sm mt-2 pt-2 border-t border-gray-200">
+                                  {material.contentEn}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
+                        <button
+                          onClick={() => setExpandedClusterId(null)}
+                          className="w-full py-2 text-echo-muted hover:text-echo-text text-sm transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
           ) : (
             <div className="text-center py-12">
               <p className="text-echo-muted">Add more materials to see clusters</p>
@@ -573,6 +656,10 @@ export function RawLibrary() {
         <AddMaterialModal
           onClose={() => setShowAddModal(false)}
           onAdd={handleAddMaterial}
+          onOpenAppleNotes={() => {
+            setShowAddModal(false);
+            setShowAppleNotesImporter(true);
+          }}
         />
       )}
 

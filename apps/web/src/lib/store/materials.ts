@@ -23,6 +23,8 @@ import {
 import { getEmbedding } from '../embedding';
 import { deleteEmbedding } from '../db';
 import { schedulePassiveVocabularyExtraction } from '../background-extraction';
+import { clearClusterCache } from '../clustering';
+import { clearTerritoryCache } from '../territory';
 
 export interface RawMaterial {
   id: string;
@@ -351,6 +353,10 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     if (type === 'text' && content.length >= 50) {
       schedulePassiveVocabularyExtraction(id, content);
     }
+
+    // Clear cluster/territory caches (material set changed)
+    clearClusterCache();
+    clearTerritoryCache();
   },
 
   updateMaterial: (id, content, note) => {
@@ -390,6 +396,10 @@ export const useMaterialsStore = create<MaterialsStore>((set, get) => ({
     deleteEmbedding(id).catch((error) => {
       console.warn('Failed to delete embedding for material:', id, error);
     });
+
+    // Clear cluster/territory caches (material set changed)
+    clearClusterCache();
+    clearTerritoryCache();
   },
 
   getMaterial: (id) => {

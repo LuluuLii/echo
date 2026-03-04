@@ -12,6 +12,7 @@ interface AddMaterialModalProps {
     fileData?: string;
     fileThumbnail?: string;
   }) => void;
+  onOpenAppleNotes?: () => void;
 }
 
 type InputMode = 'text' | 'image' | 'file';
@@ -25,7 +26,7 @@ interface ParsedFile {
   mimeType?: string;    // MIME type for images
 }
 
-export function AddMaterialModal({ onClose, onAdd }: AddMaterialModalProps) {
+export function AddMaterialModal({ onClose, onAdd, onOpenAppleNotes }: AddMaterialModalProps) {
   const { materials } = useMaterialsStore();
   const [mode, setMode] = useState<InputMode>('text');
   const [text, setText] = useState('');
@@ -483,23 +484,40 @@ export function AddMaterialModal({ onClose, onAdd }: AddMaterialModalProps) {
         {mode === 'file' && (
           <div className="space-y-4">
             {parsedFiles.length === 0 ? (
-              <div
-                onClick={() => documentInputRef.current?.click()}
-                className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-gray-300 transition-colors"
-              >
-                {isProcessing ? (
-                  <p className="text-echo-muted">Processing files...</p>
-                ) : (
-                  <>
-                    <p className="text-echo-muted mb-2">Click to select files</p>
-                    <p className="text-echo-hint text-sm">
-                      Supports: .md, .txt, images
-                    </p>
-                    <p className="text-echo-hint text-xs mt-2">
-                      Markdown files will be split by sections
-                    </p>
-                  </>
+              <div className="space-y-3">
+                {/* Apple Notes Import (macOS only) */}
+                {navigator.platform.toLowerCase().includes('mac') && onOpenAppleNotes && (
+                  <button
+                    onClick={onOpenAppleNotes}
+                    className="w-full flex items-center gap-3 p-4 border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-colors text-left"
+                  >
+                    <span className="text-2xl">🍎</span>
+                    <div>
+                      <p className="font-medium text-echo-text">Import from Apple Notes</p>
+                      <p className="text-echo-hint text-sm">Select notes from your Apple Notes app</p>
+                    </div>
+                  </button>
                 )}
+
+                {/* Local file import */}
+                <div
+                  onClick={() => documentInputRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-gray-300 transition-colors"
+                >
+                  {isProcessing ? (
+                    <p className="text-echo-muted">Processing files...</p>
+                  ) : (
+                    <>
+                      <p className="text-echo-muted mb-2">Click to select files</p>
+                      <p className="text-echo-hint text-sm">
+                        Supports: .md, .txt, images
+                      </p>
+                      <p className="text-echo-hint text-xs mt-2">
+                        Markdown files will be split by sections
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-3">

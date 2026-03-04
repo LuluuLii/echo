@@ -55,6 +55,80 @@ const DEFAULT_WIDTH = 800;
 const DEFAULT_HEIGHT = 600;
 const PADDING = 50;
 
+// Territory cache key for IndexedDB
+const TERRITORY_CACHE_KEY = 'territory-result-cache';
+
+/**
+ * Generate cache key from materials
+ */
+function getTerritoryKey(materials: RawMaterial[], width: number, height: number): string {
+  const ids = materials.map(m => m.id).sort().join(',');
+  const contentHash = materials.reduce((acc, m) => acc + m.content.length, 0);
+  return `${ids}:${contentHash}:${width}:${height}`;
+}
+
+/**
+ * Load cached territory result from IndexedDB
+ */
+async function loadTerritoryCache(): Promise<{ key: string; data: TerritoryData } | null> {
+  try {
+    const { db } = await import('./db');
+    const cached = await db.meta.get(TERRITORY_CACHE_KEY);
+    if (cached?.value) {
+      console.log('[Territory] Loaded cache from IndexedDB');
+      const parsed = JSON.parse(cached.value as string);
+      // Voronoi can't be serialized, will be regenerated if needed
+      return {
+        key: parsed.key,
+        data: {
+          ...parsed.data,
+          voronoi: null,
+        },
+      };
+    }
+  } catch (e) {
+    console.warn('[Territory] Failed to load cache:', e);
+  }
+  return null;
+}
+
+/**
+ * Save territory result to IndexedDB
+ */
+async function saveTerritoryCache(key: string, data: TerritoryData): Promise<void> {
+  try {
+    const { db } = await import('./db');
+    // Voronoi is not serializable, exclude it
+    const serializable = {
+      key,
+      data: {
+        points: data.points,
+        clusters: data.clusters,
+        contours: data.contours,
+        bounds: data.bounds,
+        // voronoi excluded
+      },
+    };
+    await db.meta.put({ key: TERRITORY_CACHE_KEY, value: JSON.stringify(serializable) });
+    console.log('[Territory] Saved cache to IndexedDB');
+  } catch (e) {
+    console.warn('[Territory] Failed to save cache:', e);
+  }
+}
+
+/**
+ * Clear the territory cache (call when materials are added/deleted)
+ */
+export async function clearTerritoryCache(): Promise<void> {
+  try {
+    const { db } = await import('./db');
+    await db.meta.delete(TERRITORY_CACHE_KEY);
+    console.log('[Territory] Cache cleared from IndexedDB');
+  } catch (e) {
+    console.warn('[Territory] Failed to clear cache:', e);
+  }
+}
+
 // Color palette for clusters (soft, organic colors)
 const CLUSTER_COLORS = [
   '#8B9DC3', // Soft blue
@@ -235,10 +309,12 @@ export async function buildTerritoryData(
   options: {
     width?: number;
     height?: number;
+    skipCache?: boolean;
   } = {}
 ): Promise<TerritoryData> {
   const width = options.width || DEFAULT_WIDTH;
   const height = options.height || DEFAULT_HEIGHT;
+  const { skipCache = false } = options;
 
   // Handle empty case
   if (materials.length === 0) {
@@ -249,6 +325,21 @@ export async function buildTerritoryData(
       voronoi: null,
       bounds: { width, height },
     };
+  }
+
+  // Check cache from IndexedDB
+  const cacheKey = getTerritoryKey(materials, width, height);
+  if (!skipCache) {
+    const cached = await loadTerritoryCache();
+    if (cached && cached.key === cacheKey) {
+      console.log('[Territory] Using cached result from IndexedDB');
+      // Regenerate Voronoi (not serializable)
+      const voronoi = generateVoronoi(cached.data.clusters, width, height);
+      return {
+        ...cached.data,
+        voronoi,
+      };
+    }
   }
 
   // Step 1: Cluster materials in embedding space (semantically accurate)
@@ -340,13 +431,18 @@ export async function buildTerritoryData(
   // Step 6: Generate Voronoi
   const voronoi = generateVoronoi(clusters, width, height);
 
-  return {
+  const result: TerritoryData = {
     points,
     clusters,
     contours,
     voronoi,
     bounds: { width, height },
   };
+
+  // Save to IndexedDB for persistence
+  await saveTerritoryCache(cacheKey, result);
+
+  return result;
 }
 
 /**

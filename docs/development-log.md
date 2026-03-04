@@ -1,6 +1,9 @@
 # Echo Development Log
 
-> 最后更新: 2026-02-15
+> 最后更新: 2026-02-24 (iCloud 优先存储架构)
+>
+> Claude Code Session: `2b82ed80-9de5-4080-b4ef-88dc28298990`
+> 对话记录: `~/.claude/projects/-Users-chenlu-Developer-Echo/2b82ed80-9de5-4080-b4ef-88dc28298990.jsonl`
 
 ## 项目概述
 
@@ -131,11 +134,11 @@ echo/
 - [ ] NativeWind 样式
 - [ ] 本地 SQLite 存储
 
-#### 高级功能 ❌
+#### 高级功能
 - [ ] 语音输入/输出
 - [ ] 每日推送通知
 - [ ] Insight 数据分析
-- [ ] iCloud 同步
+- [x] iCloud 同步 (iCloud 优先存储架构)
 
 ## 技术栈
 
@@ -249,47 +252,253 @@ daaefb8 feat: Add two entry points for Echo session
 - [x] 导入时去重检测 - 基于 embedding 相似度检测
 - [x] 智能分段优化 - 支持多种分段策略 (标题/段落/列表等)
 
-#### Step 2: Memory 整体方案优化 ⬅️ 当前
+#### Step 2: Memory 整体方案优化 ✅ 完成
 
 重构长期记忆层，分为多个维度：
 
-- [ ] **Artifacts** - 精炼表达的存储和关联
-- [ ] **User Profile** - 用户画像（兴趣、表达风格、常用词汇）
-- [ ] **Growth Tracking** - 成长轨迹（练习历史、进步记录）
-- [ ] **Session Memory** - 对话记忆优化
+- [x] **Artifacts** - 精炼表达的存储和关联
+- [x] **User Profile** - 用户画像（兴趣、表达风格、常用词汇）
+- [x] **Growth Tracking** - 成长轨迹（练习历史、进步记录）
+- [x] **Session Memory** - 对话记忆优化
+- [x] **Vocabulary Memory** - 词汇追踪（被动/主动/掌握）
+- [x] **Background Extraction** - 后台词汇和 Profile insights 提取
 
-#### Step 3: Memory 整合到 Insights
+#### Step 3: Evaluation 对齐检查 ⬅️ 当前
 
-- [ ] Artifacts 在 Territory 上展示（山顶结晶）
-- [ ] Session 练习历史可视化
-- [ ] 时间维度展示
-- [ ] Blind Spots 增强
+基于 [evaluation.md](./evaluation.md) 进行功能完整性检查，识别缺失功能。
 
-#### Step 4: Insight 视觉风格完善
+---
 
-- [ ] 配色方案定稿
-- [ ] 动画效果（进入/hover/zoom）
-- [ ] 等高线样式优化
-- [ ] 响应式适配
+## Evaluation 差距分析 (2026-02-24)
 
-#### Step 5: 整体 UI 风格细化
+> 基于 evaluation.md 的 E2E 用户旅程检查，识别当前实现的缺失
+
+### 缺失功能总览
+
+| 功能模块 | 缺失项 | 对应评估 |
+|---------|-------|---------|
+| **Session 对话** | Echo 自然融入表达示范 | 4.4 Feedback - thought_refinement |
+| **Session 对话** | 词汇推荐展示 | 2.5, 2.6 推荐「见过但没用过」的词汇 |
+| **Session 工具** | Translate/Hints/Dictionary | 设计稿 Tools 下拉 |
+| **Session 模式** | Creation Mode (创作模式) | 新需求 |
+| **Session 面板** | 右侧 Expression Artifacts 展示 | 设计稿 |
+| **Insights 页面** | 词汇状态展示 | 1.12, 2.7 词汇追踪 UI |
+| **Creative Studio** | 整个模块不存在 | Journey 4, 5 |
+| **Project** | 项目/持续练习概念 | Journey 5 备考场景 |
+
+### 详细差距说明
+
+#### 1. Echo Companion 表达示范 (对话模式)
+
+**当前状态**: Echo prompt 设计为「不纠错」模式
+
+**需要调整**: 在自然回复中融入正确表达示范
+
+```
+当前 prompt:
+"Never correct grammar explicitly"
+
+调整为:
+"如果用户表达有误，在回复中自然地使用正确表达，
+例如: 'Yes, I think you mean taking it into account -
+that's a great point about...'"
+```
+
+**评估对应**: 4.4 Feedback - 是否帮助厘清想法，而非只纠语法
+
+#### 2. Session 词汇推荐
+
+**当前状态**:
+- ✅ 数据层: `getRecommendedToActivate()` 已实现
+- ❌ UI 层: 没有展示推荐词汇的界面
+
+**需要添加**:
+```
+┌─────────────────────────────────────────────────┐
+│  💡 Try using (来自你的素材):                    │
+│  ┌─────────────────────────────────────────┐   │
+│  │ "take into account" - 见过 3 次          │   │
+│  └─────────────────────────────────────────┘   │
+│  触发: Session 开始时 / 用户表达后              │
+└─────────────────────────────────────────────────┘
+```
+
+**评估对应**: 2.5, 2.6 - 推荐「见过但没用过」的词汇，推荐时机自然
+
+#### 3. Session 工具栏
+
+**当前状态**: 无
+
+**需要添加** (参考设计稿):
+- **Translate**: 选中文本即时翻译
+- **Hints**: 请求表达提示
+- **Dictionary**: 查词功能
+
+#### 4. Creation Mode (创作模式)
+
+**当前状态**: 仅有 Dialog Mode (每次输入 AI 都回复)
+
+**需要添加**:
+```
+Creation Mode:
+- 用户自由写作，AI 不主动回复
+- 用户可点击:
+  - [Request Feedback] → AI 给出整体反馈和改进建议
+  - [Hints] → AI 给出表达提示
+  - [Continue] → AI 帮助续写
+```
+
+**评估对应**: 新需求 - 支持长文创作场景
+
+#### 5. Insights 词汇板块
+
+**当前状态**: Insights 页面有 Territory 和 Stats，无词汇展示
+
+**需要添加**:
+```
+┌─────────────────────────────────────────────────┐
+│  Vocabulary Overview                            │
+│  ┌────────┐ ┌────────┐ ┌────────┐              │
+│  │ Passive │ │ Active │ │Mastered│              │
+│  │  156    │ │   42   │ │   18   │              │
+│  └────────┘ └────────┘ └────────┘              │
+│                                                 │
+│  Recently Activated                             │
+│  • "take into account" - 昨天首次使用           │
+│  • "in terms of" - 2天前                       │
+│                                                 │
+│  Recommended to Activate (见过多次但没用过)      │
+│  • "nevertheless" - 见过 5 次                   │
+└─────────────────────────────────────────────────┘
+```
+
+**评估对应**: 1.12, 2.7 - 词汇状态展示和追踪
+
+#### 6. Creative Studio 模块
+
+**当前状态**: 不存在，当前 Practice 入口直接进入 Session
+
+**需要添加** (参考设计稿):
+- 将 Practice 导航升级为 Creative Studio
+- 支持 Project (持续练习项目)
+- 支持随笔创作 (Quick Create)
+- Inspiration Workbench (任务列表)
+
+#### 7. Project 数据模型
+
+**当前状态**: 无项目概念
+
+**需要添加**:
+```typescript
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  type: 'practice' | 'creation' | 'exam-prep';
+  topics: string[];
+  materialIds: string[];
+  artifactIds: string[];
+  progress: {
+    totalSessions: number;
+    completedSessions: number;
+    targetSessions?: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+}
+```
+
+**评估对应**: Journey 5 - 备考场景
+
+---
+
+## 实现计划
+
+### P0: 核心体验完善
+
+| 任务 | 说明 | 评估对应 |
+|-----|------|---------|
+| **Echo prompt 调整** | 对话模式中自然融入表达示范 | 4.4 Feedback |
+| **Session 词汇推荐** | 推荐「见过但没用过」的词汇 | 2.5, 2.6 |
+| **Session 工具栏** | Translate / Hints / Dictionary | 设计稿 |
+
+### P1: 模式升级 + Insights 完善
+
+| 任务 | 说明 | 评估对应 |
+|-----|------|---------|
+| **Creation Mode** | 创作模式，AI 仅按需响应 | 新需求 |
+| **Insights 词汇板块** | 词汇状态展示 (被动/主动/掌握) | 1.12, 2.7 |
+| **Session 右侧面板** | Expression Artifacts 展示 | 设计稿 |
+
+### P2: Creative Studio
+
+| 任务 | 说明 | 评估对应 |
+|-----|------|---------|
+| **Project 数据模型** | Loro 存储 | Journey 5 |
+| **Creative Studio 页面** | 替代当前 Practice 入口 | Journey 4, 5 |
+| **Task 管理** | 创作任务的增删改查 | 设计稿 |
+
+### P3: 进阶功能
+
+| 任务 | 说明 |
+|-----|------|
+| **新手引导** | Journey 1.2 |
+| **Export/Share** | 设计稿功能 |
+| **Progress 可视化** | 学习进度展示 |
+
+---
+
+#### Step 4: P0 核心体验实现 ✅ 完成
+
+- [x] Echo prompt 调整 - 自然融入表达示范 (`echo-companion.ts`)
+- [x] Session 词汇推荐 UI (`ChatContextPanel.tsx` - "Try These" tab)
+- [x] Session 工具栏 (`ChatInput.tsx` - Translate/Hints/Dictionary)
+
+#### Step 5: P1 模式升级 + Insights ✅ 完成
+
+- [x] Creation Mode 实现 (`Session.tsx`, `ChatPhase.tsx`, `creation-mode.ts`)
+  - Dialog/Creation 模式切换
+  - Creation 模式下不自动回复
+  - Get Feedback / Quick Check / Help Continue 按钮
+- [x] Insights 词汇板块 (`Insights.tsx` - Vocabulary Progress section)
+- [x] Session Expression Artifacts 面板 (`ChatContextPanel.tsx` - "Past Expressions" tab)
+
+#### Step 6: P2 Creative Studio ✅ 完成
+
+- [x] Project 数据模型 (`packages/core/models/project.ts`, Loro storage)
+  - Project: id, name, type, status, topics, materialIds, artifactIds, progress
+  - ProjectTask: id, projectId, title, priority, status, materialIds
+- [x] Creative Studio 页面 (`CreativeStudio.tsx`)
+  - Projects/Tasks/Quick Start 三个视图切换
+  - 创建项目表单 (name, type, description)
+  - 项目卡片展示 (进度、统计、Continue 按钮)
+  - 待办任务列表
+- [x] Task 管理
+  - createTask, updateTask, deleteTask, completeTask
+  - 任务与项目关联
+  - 进度自动更新
+
+#### Step 7: iCloud 优先存储架构 ✅ 完成
+
+- [x] `initLoro` 加载优先级调整: iCloud → IndexedDB → localStorage
+- [x] `persistNow` 双写: 同时保存到 iCloud + IndexedDB
+- [x] 自动同步: 每 5 分钟 `mergeFromICloud()`
+- [x] 退出同步: `setupBeforeUnloadSync()`
+- [x] JSON 导出: `exportAsJSON()` 函数
+- [x] 文档更新: sync-architecture.md
+
+#### Step 8: UI 和交互流程打磨 ⬅️ 下一步
 
 - [ ] 设计系统统一（颜色/字体/间距）
-- [ ] 组件库完善
-- [ ] 暗色模式支持
-
-#### Step 6: UI 和交互流程打磨
-
 - [ ] 用户流程优化
-- [ ] 交互细节完善
 - [ ] Bug bash
 - [ ] 性能优化
 
-#### Step 7: Evaluation Pipeline
+#### Step 8: Evaluation Pipeline
 
 - [ ] 自动化测试
-- [ ] 用户体验指标
-- [ ] LLM 输出质量评估
+- [ ] AI Judge 评测
+- [ ] 场景化回归测试
 
 ---
 
@@ -441,18 +650,27 @@ daaefb8 feat: Add two entry points for Echo session
 
 **策略**: 每个端在同步新素材后，本地独立计算 embedding
 
-### 5. 多端同步方案: Loro + iCloud
+### 5. 多端同步方案: Loro + iCloud (iCloud 优先)
 
-**决策**: 使用 Loro CRDT 作为数据结构，iCloud Drive 作为同步通道
+**决策**: 使用 Loro CRDT 作为数据结构，iCloud Drive 为主存储，IndexedDB 为缓存
 
 **原因**:
-- **Loro**: Rust 实现，高性能，支持 WASM (Web) 和 Native (Mobile)，自动处理冲突
+- **Loro**: Rust 实现，高性能，支持 WASM (Web) 和 Swift (iOS)，自动处理冲突
 - **iCloud**: 用户数据自主，无需自建服务器，Apple 生态内免费
+- **双写策略**: 确保数据可靠性，即使 IndexedDB 被清除也不丢数据
 
-**实现策略**:
-- **IndexedDB 为权威数据源** - 所有写操作只写 IndexedDB
-- **同步为单向推送** - 手动/定期从 IndexedDB 推送到 iCloud
-- **从一开始使用 Loro** - 数据格式无需迁移
+**实现策略** (2026-02-24 更新):
+- **iCloud 为主存储** - 连接后优先从 iCloud 加载
+- **IndexedDB 为缓存** - 始终保存，作为离线备份
+- **localStorage 为紧急备份** - beforeunload 时保存
+- **自动同步** - 每 5 分钟合并 iCloud 数据
+- **退出同步** - 页面关闭前尝试同步到 iCloud
+- **JSON 导出** - 支持导出为 JSON 格式备份
+
+**跨端架构**:
+```
+iOS App (loro-swift + FileManager) ←→ iCloud Drive ←→ Web App (loro-crdt + File System Access API)
+```
 
 详见 [sync-architecture.md](./sync-architecture.md)
 

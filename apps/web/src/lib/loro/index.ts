@@ -5,7 +5,7 @@
  */
 
 // Core
-export { getDoc, initLoro, persistNow, scheduleSave } from './core';
+export { getDoc, initLoro, persistNow, scheduleSave, isICloudConnected, refreshICloudStatus } from './core';
 
 // Types
 export type {

@@ -8,9 +8,9 @@ export function Layout() {
   const [syncPanelOpen, setSyncPanelOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-echo-bg">
+    <div className="h-screen bg-echo-bg flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-gray-100">
+      <header className="bg-white border-b border-gray-100 flex-shrink-0">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="text-xl font-semibold text-echo-text">
             Echo
@@ -54,8 +54,10 @@ export function Layout() {
       </header>
 
       {/* Main content */}
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        <Outlet />
+      <main className="flex-1 overflow-hidden">
+        <div className="h-full max-w-5xl mx-auto px-4 py-6">
+          <Outlet />
+        </div>
       </main>
 
       {/* Sync Panel */}

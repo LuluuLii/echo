@@ -364,3 +364,85 @@ export function disableAutoSync(): void {
 export function isAutoSyncEnabled(): boolean {
   return autoSyncInterval !== null;
 }
+
+/**
+ * Load snapshot from iCloud (for initial load)
+ * Returns null if not connected or file doesn't exist
+ */
+export async function loadFromICloud(): Promise<Uint8Array | null> {
+  try {
+    const status = await getICloudStatus();
+    if (!status.connected || !status.hasPermission) {
+      return null;
+    }
+    return await readFromICloud();
+  } catch (error) {
+    console.warn('[iCloud] Failed to load from iCloud:', error);
+    return null;
+  }
+}
+
+/**
+ * Save snapshot to iCloud (for persistence)
+ * Silently fails if not connected
+ */
+export async function saveToICloud(snapshot: Uint8Array): Promise<boolean> {
+  try {
+    const status = await getICloudStatus();
+    if (!status.connected || !status.hasPermission) {
+      return false;
+    }
+    await writeToICloud(snapshot);
+    await setLastSyncTime(Date.now());
+    return true;
+  } catch (error) {
+    console.warn('[iCloud] Failed to save to iCloud:', error);
+    return false;
+  }
+}
+
+/**
+ * Setup beforeunload sync
+ * Syncs to iCloud when user leaves the page
+ */
+export function setupBeforeUnloadSync(): void {
+  if (typeof window === 'undefined') return;
+
+  window.addEventListener('beforeunload', () => {
+    // Use sendBeacon for reliable sync on page unload
+    // But since we can't use sendBeacon with File System Access API,
+    // we do a synchronous-ish save using the stored handle
+    const status = getICloudStatus();
+
+    // Schedule a sync - this may not complete if page closes too fast
+    // but it's better than nothing. The auto-sync should have saved recent data.
+    void syncToICloud().catch(() => {
+      // Ignore errors on unload
+    });
+  });
+
+  console.log('[iCloud] beforeunload sync enabled');
+}
+
+/**
+ * Export document as JSON (for backup/migration)
+ */
+export function exportAsJSON(): Record<string, unknown> {
+  const doc = getDoc();
+  return {
+    materials: doc.getMap('materials').toJSON(),
+    artifacts: doc.getMap('artifacts').toJSON(),
+    sessions: doc.getMap('sessions').toJSON(),
+    sessionMemories: doc.getMap('sessionMemories').toJSON(),
+    userProfile: doc.getMap('userProfile').toJSON(),
+    learningState: doc.getMap('learningState').toJSON(),
+    topicProficiency: doc.getMap('topicProficiency').toJSON(),
+    growthEvents: doc.getMap('growthEvents').toJSON(),
+    userUtterances: doc.getMap('userUtterances').toJSON(),
+    vocabularyRecords: doc.getMap('vocabularyRecords').toJSON(),
+    projects: doc.getMap('projects').toJSON(),
+    tasks: doc.getMap('tasks').toJSON(),
+    exportedAt: new Date().toISOString(),
+    version: 1,
+  };
+}

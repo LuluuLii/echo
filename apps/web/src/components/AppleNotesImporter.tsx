@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { checkDuplicate, type DuplicateCheckResult } from '../lib/deduplication';
+import { useState, useEffect } from 'react';
+import { type DuplicateCheckResult } from '../lib/deduplication';
 import { useMaterialsStore } from '../lib/store/materials';
 
 interface AppleNotesImporterProps {
@@ -196,14 +196,12 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
       const imported = data.notes || [];
       setImportedNotes(imported);
 
-      // Check for duplicates
+      // Quick exact-match duplicate check (no embedding, just string comparison)
+      const existingContents = new Set(materials.map(m => m.content.trim()));
       const dupResults = new Map<string, DuplicateCheckResult>();
-      for (let i = 0; i < imported.length; i++) {
-        setImportProgress({ current: i + 1, total: imported.length });
-        const note = imported[i];
-        if (note.body) {
-          const result = await checkDuplicate(note.body, materials);
-          dupResults.set(note.id, result);
+      for (const note of imported) {
+        if (note.body && existingContents.has(note.body.trim())) {
+          dupResults.set(note.id, { isDuplicate: true, isNearDuplicate: false, matches: [] });
         }
       }
       setDuplicateResults(dupResults);
@@ -239,13 +237,12 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
       setImportedNotes(imported);
       setImportProgress({ current: imported.length, total: imported.length });
 
-      // Check for duplicates
+      // Quick exact-match duplicate check (no embedding, just string comparison)
+      const existingContents = new Set(materials.map(m => m.content.trim()));
       const dupResults = new Map<string, DuplicateCheckResult>();
-      for (let i = 0; i < imported.length; i++) {
-        const note = imported[i];
-        if (note.body) {
-          const result = await checkDuplicate(note.body, materials);
-          dupResults.set(note.id, result);
+      for (const note of imported) {
+        if (note.body && existingContents.has(note.body.trim())) {
+          dupResults.set(note.id, { isDuplicate: true, isNearDuplicate: false, matches: [] });
         }
       }
       setDuplicateResults(dupResults);
@@ -432,41 +429,26 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
 
       case 'review':
         const duplicateCount = importedNotes.filter(n => duplicateResults.get(n.id)?.isDuplicate).length;
-        const similarCount = importedNotes.filter(n => {
-          const dup = duplicateResults.get(n.id);
-          return dup?.isNearDuplicate && !dup.isDuplicate;
-        }).length;
 
         return (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <p className="text-echo-text font-medium">Review Import</p>
-              <div className="flex items-center gap-2">
-                {duplicateCount > 0 && (
-                  <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">
-                    {duplicateCount} duplicates
-                  </span>
-                )}
-                {similarCount > 0 && (
-                  <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
-                    {similarCount} similar
-                  </span>
-                )}
-              </div>
+              {duplicateCount > 0 && (
+                <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">
+                  {duplicateCount} duplicate{duplicateCount > 1 ? 's' : ''} found
+                </span>
+              )}
             </div>
 
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {importedNotes.map(note => {
-                const dup = duplicateResults.get(note.id);
+                const isDup = duplicateResults.get(note.id)?.isDuplicate;
                 return (
                   <div
                     key={note.id}
                     className={`p-3 border rounded-lg ${
-                      dup?.isDuplicate
-                        ? 'border-yellow-300 bg-yellow-50/50'
-                        : dup?.isNearDuplicate
-                        ? 'border-orange-200 bg-orange-50/50'
-                        : 'border-gray-200'
+                      isDup ? 'border-yellow-300 bg-yellow-50/50' : 'border-gray-200'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -475,13 +457,8 @@ export function AppleNotesImporter({ onClose, onImport }: AppleNotesImporterProp
                         <p className="text-echo-hint text-xs line-clamp-2 mt-1">
                           {note.body.slice(0, 150)}...
                         </p>
-                        {dup?.isDuplicate && (
+                        {isDup && (
                           <p className="text-yellow-600 text-xs mt-1">Exact duplicate - will be skipped</p>
-                        )}
-                        {dup?.isNearDuplicate && !dup.isDuplicate && (
-                          <p className="text-orange-600 text-xs mt-1">
-                            Similar to existing ({Math.round((dup.matches[0]?.similarity || 0) * 100)}% match)
-                          </p>
                         )}
                       </div>
                       <button

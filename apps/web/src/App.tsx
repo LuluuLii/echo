@@ -13,6 +13,7 @@ import { useUserStore } from './lib/store/user';
 import { useVocabularyStore } from './lib/store/vocabulary';
 import { useProjectsStore } from './lib/store/projects';
 import { initializeLLMService } from './lib/llm';
+import { enableAutoSync, setupBeforeUnloadSync } from './lib/icloud';
 
 function App() {
   const { init, initialized, loading } = useMaterialsStore();
@@ -32,6 +33,12 @@ function App() {
     initializeLLMService().then(() => {
       console.log('[LLM] Service initialized');
     });
+
+    // Enable iCloud auto-sync (every 5 minutes)
+    enableAutoSync(5 * 60 * 1000);
+
+    // Setup beforeunload sync
+    setupBeforeUnloadSync();
   }, [init, initUser, initVocabulary, initProjects]);
 
   if (loading) {
